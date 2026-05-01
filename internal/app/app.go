@@ -16,6 +16,7 @@ import (
 	"github.com/varavelio/litemigrate/internal/drivers/rqlite"
 	"github.com/varavelio/litemigrate/internal/migrations"
 	"github.com/varavelio/litemigrate/internal/store"
+	"github.com/varavelio/litemigrate/internal/version"
 )
 
 // App coordinates CLI parsing, configuration loading, and command execution.
@@ -66,6 +67,10 @@ func (app *App) Run(ctx context.Context, args []string) error {
 		return app.runStatus(ctx, loadedConfig)
 	case cli.CommandCompile:
 		return app.runCompile(loadedConfig)
+	case cli.CommandVersion:
+		return app.runVersion()
+	case cli.CommandHelp:
+		return app.runHelp()
 	default:
 		return fmt.Errorf("unsupported command %q", parsed.Name)
 	}
@@ -317,6 +322,22 @@ func (app *App) runStatus(ctx context.Context, cfg config.Config) error {
 		lastApplied,
 		nextPending,
 	)
+	return err
+}
+
+func (app *App) runVersion() error {
+	_, err := fmt.Fprintf(
+		app.Stdout,
+		"litemigrate version %s, commit %s, built at %s\n",
+		version.Version,
+		version.Commit,
+		version.Date,
+	)
+	return err
+}
+
+func (app *App) runHelp() error {
+	_, err := fmt.Fprintln(app.Stdout, cli.Usage())
 	return err
 }
 

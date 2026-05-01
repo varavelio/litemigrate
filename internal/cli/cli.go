@@ -24,6 +24,10 @@ const (
 	CommandStatus CommandName = "status"
 	// CommandCompile renders the final schema from local migrations.
 	CommandCompile CommandName = "compile"
+	// CommandVersion prints the version of the application.
+	CommandVersion CommandName = "version"
+	// CommandHelp prints usage instructions.
+	CommandHelp CommandName = "help"
 )
 
 // Parsed contains the parsed CLI command and options.
@@ -41,12 +45,20 @@ type Parsed struct {
 // Parse parses CLI arguments into a command structure.
 func Parse(args []string) (Parsed, error) {
 	if len(args) == 0 {
-		return Parsed{}, errors.New("missing command")
+		return Parsed{Name: CommandHelp}, nil
+	}
+
+	if args[0] == "--version" || args[0] == "-v" || args[0] == "version" {
+		return Parsed{Name: CommandVersion}, nil
+	}
+
+	if args[0] == "--help" || args[0] == "-h" || args[0] == "help" {
+		return Parsed{Name: CommandHelp}, nil
 	}
 
 	prefixLength := prefixFlagLength(args)
 	if prefixLength >= len(args) {
-		return Parsed{}, errors.New("missing command")
+		return Parsed{Name: CommandHelp}, nil
 	}
 
 	common := config.Flags{}
@@ -59,12 +71,25 @@ func Parse(args []string) (Parsed, error) {
 		Flags: common,
 	}
 
+	if string(parsed.Name) == "--help" || string(parsed.Name) == "-h" ||
+		string(parsed.Name) == "help" {
+		return Parsed{Name: CommandHelp}, nil
+	}
+
+	if string(parsed.Name) == "--version" || string(parsed.Name) == "-v" ||
+		string(parsed.Name) == "version" {
+		return Parsed{Name: CommandVersion}, nil
+	}
+
 	commandArgs := args[prefixLength+1:]
 
 	switch parsed.Name {
 	case CommandNew:
 		flagSet := newCommandFlagSet(string(CommandNew))
 		if err := bindCommonFlags(flagSet, &parsed.Flags).parse(commandArgs); err != nil {
+			if errors.Is(err, flag.ErrHelp) {
+				return Parsed{Name: CommandHelp}, nil
+			}
 			return Parsed{}, err
 		}
 		if flagSet.NArg() != 1 {
@@ -76,6 +101,9 @@ func Parse(args []string) (Parsed, error) {
 		binder := bindCommonFlags(flagSet, &parsed.Flags)
 		flagSet.BoolVar(&parsed.All, "all", false, "apply all pending migrations")
 		if err := binder.parse(commandArgs); err != nil {
+			if errors.Is(err, flag.ErrHelp) {
+				return Parsed{Name: CommandHelp}, nil
+			}
 			return Parsed{}, err
 		}
 		if flagSet.NArg() != 0 {
@@ -86,6 +114,9 @@ func Parse(args []string) (Parsed, error) {
 		binder := bindCommonFlags(flagSet, &parsed.Flags)
 		flagSet.BoolVar(&parsed.All, "all", false, "roll back all applied migrations")
 		if err := binder.parse(commandArgs); err != nil {
+			if errors.Is(err, flag.ErrHelp) {
+				return Parsed{Name: CommandHelp}, nil
+			}
 			return Parsed{}, err
 		}
 		if flagSet.NArg() != 0 {
@@ -95,6 +126,9 @@ func Parse(args []string) (Parsed, error) {
 		flagSet := newCommandFlagSet(string(CommandCompile))
 		binder := bindCommonFlags(flagSet, &parsed.Flags)
 		if err := binder.parse(commandArgs); err != nil {
+			if errors.Is(err, flag.ErrHelp) {
+				return Parsed{Name: CommandHelp}, nil
+			}
 			return Parsed{}, err
 		}
 		if flagSet.NArg() != 0 {
@@ -104,6 +138,9 @@ func Parse(args []string) (Parsed, error) {
 		flagSet := newCommandFlagSet(string(CommandStatus))
 		binder := bindCommonFlags(flagSet, &parsed.Flags)
 		if err := binder.parse(commandArgs); err != nil {
+			if errors.Is(err, flag.ErrHelp) {
+				return Parsed{Name: CommandHelp}, nil
+			}
 			return Parsed{}, err
 		}
 		if flagSet.NArg() != 0 {
@@ -125,6 +162,8 @@ Usage:
   litemigrate down [--all] [flags]
   litemigrate status [flags]
   litemigrate compile [--compile-output path] [flags]
+  litemigrate version
+  litemigrate help
 
 Common flags:
   --config <path>
