@@ -3,6 +3,7 @@ module github.com/varavelio/litemigrate
 go 1.26
 
 require (
+	github.com/joho/godotenv v1.5.1
 	github.com/stretchr/testify v1.10.0
 	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/libc v1.66.10
