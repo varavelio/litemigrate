@@ -78,6 +78,43 @@ CREATE TABLE audit_log (
 			statements[1],
 		)
 	})
+
+	t.Run("ignores semicolons inside comments", func(t *testing.T) {
+		statements, err := SplitStatements(`
+-- comment with a ; semicolon
+CREATE TABLE users (id INTEGER PRIMARY KEY); /* trailing ; comment */
+/* block ; comment */
+CREATE INDEX idx_users_id ON users(id);
+`)
+
+		require.NoError(t, err)
+		require.Equal(t, []string{
+			"-- comment with a ; semicolon\nCREATE TABLE users (id INTEGER PRIMARY KEY)",
+			"/* trailing ; comment */\n/* block ; comment */\nCREATE INDEX idx_users_id ON users(id)",
+		}, statements)
+	})
+
+	t.Run("splits multiple statements on one line", func(t *testing.T) {
+		statements, err := SplitStatements(
+			"CREATE TABLE users (id INTEGER PRIMARY KEY); CREATE INDEX idx_users_id ON users(id);",
+		)
+
+		require.NoError(t, err)
+		require.Equal(t, []string{
+			"CREATE TABLE users (id INTEGER PRIMARY KEY)",
+			"CREATE INDEX idx_users_id ON users(id)",
+		}, statements)
+	})
+
+	t.Run("rejects an incomplete trailing statement", func(t *testing.T) {
+		_, err := SplitStatements(`
+CREATE TABLE users (id INTEGER PRIMARY KEY);
+CREATE INDEX idx_users_id ON users(id)
+`)
+
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "incomplete")
+	})
 }
 
 func TestParseFile(t *testing.T) {

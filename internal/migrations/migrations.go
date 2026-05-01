@@ -9,6 +9,9 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"modernc.org/libc"
+	sqlite3 "modernc.org/sqlite/lib"
 )
 
 const (
@@ -145,32 +148,28 @@ func ParseFile(path string, contents []byte) (File, error) {
 }
 
 // SplitStatements splits SQL text into executable SQLite statements.
+//
+// The input must contain complete SQLite statements terminated the way SQLite
+// expects, including trigger bodies.
 func SplitStatements(sqlText string) ([]string, error) {
-	type parserState struct {
-		firstTokens    []string
-		inTrigger      bool
-		seenBegin      bool
-		beginDepth     int
-		caseDepth      int
-		inSingleQuote  bool
-		inDoubleQuote  bool
-		inBacktick     bool
-		inBracket      bool
-		inLineComment  bool
-		inBlockComment bool
-	}
+	tls := libc.NewTLS()
+	defer tls.Close()
 
-	var (
-		statements []string
-		current    strings.Builder
-		token      strings.Builder
-		state      parserState
-	)
+	isComplete := func(statement string) (bool, error) {
+		cString, err := libc.CString(statement)
+		if err != nil {
+			return false, fmt.Errorf("allocate SQL text: %w", err)
+		}
+		defer libc.Xfree(tls, cString)
 
-	resetStatement := func() {
-		current.Reset()
-		token.Reset()
-		state = parserState{}
+		switch sqlite3.Xsqlite3_complete(tls, cString) {
+		case 0:
+			return false, nil
+		case 1:
+			return true, nil
+		default:
+			return false, errors.New("sqlite3_complete returned an unexpected result")
+		}
 	}
 
 	normalizeStatement := func(statement string) string {
@@ -179,186 +178,49 @@ func SplitStatements(sqlText string) ([]string, error) {
 		return strings.TrimSpace(trimmed)
 	}
 
-	flushStatement := func() {
-		statement := normalizeStatement(current.String())
+	statements := make([]string, 0, strings.Count(sqlText, ";"))
+	statementStart := 0
+
+	for index := range len(sqlText) {
+		if sqlText[index] != ';' {
+			continue
+		}
+
+		candidate := sqlText[statementStart : index+1]
+		complete, err := isComplete(candidate)
+		if err != nil {
+			return nil, err
+		}
+		if !complete {
+			continue
+		}
+
+		statement := normalizeStatement(candidate)
 		if statement != "" && containsExecutableSQL(statement) {
 			statements = append(statements, statement)
 		}
-		resetStatement()
+		statementStart = index + 1
 	}
 
-	flushToken := func() {
-		if token.Len() == 0 {
-			return
-		}
-
-		upper := strings.ToUpper(token.String())
-		token.Reset()
-
-		if len(state.firstTokens) < 8 {
-			state.firstTokens = append(state.firstTokens, upper)
-		}
-
-		if !state.inTrigger {
-			if len(state.firstTokens) >= 1 && state.firstTokens[0] == "CREATE" &&
-				upper == "TRIGGER" {
-				state.inTrigger = true
-			}
-			return
-		}
-
-		switch upper {
-		case "BEGIN":
-			state.seenBegin = true
-			state.beginDepth++
-		case "CASE":
-			if state.beginDepth > 0 {
-				state.caseDepth++
-			}
-		case "END":
-			if state.beginDepth == 0 {
-				return
-			}
-			if state.caseDepth > 0 {
-				state.caseDepth--
-				return
-			}
-			state.beginDepth--
-		}
+	trailing := sqlText[statementStart:]
+	if strings.TrimSpace(trailing) == "" {
+		return statements, nil
+	}
+	if !containsExecutableSQL(trailing) {
+		return statements, nil
 	}
 
-	for index := range len(sqlText) {
-		char := sqlText[index]
-		next := byte(0)
-		if index+1 < len(sqlText) {
-			next = sqlText[index+1]
-		}
-
-		switch {
-		case state.inLineComment:
-			current.WriteByte(char)
-			if char == '\n' {
-				state.inLineComment = false
-			}
-			continue
-		case state.inBlockComment:
-			current.WriteByte(char)
-			if char == '*' && next == '/' {
-				current.WriteByte(next)
-				state.inBlockComment = false
-				continue
-			}
-			continue
-		case state.inSingleQuote:
-			current.WriteByte(char)
-			if char == '\'' {
-				if next == '\'' {
-					current.WriteByte(next)
-					continue
-				}
-				state.inSingleQuote = false
-			}
-			continue
-		case state.inDoubleQuote:
-			current.WriteByte(char)
-			if char == '"' {
-				if next == '"' {
-					current.WriteByte(next)
-					continue
-				}
-				state.inDoubleQuote = false
-			}
-			continue
-		case state.inBacktick:
-			current.WriteByte(char)
-			if char == '`' {
-				if next == '`' {
-					current.WriteByte(next)
-					continue
-				}
-				state.inBacktick = false
-			}
-			continue
-		case state.inBracket:
-			current.WriteByte(char)
-			if char == ']' {
-				state.inBracket = false
-			}
-			continue
-		}
-
-		if char == '-' && next == '-' {
-			flushToken()
-			current.WriteString("--")
-			state.inLineComment = true
-			continue
-		}
-
-		if char == '/' && next == '*' {
-			flushToken()
-			current.WriteString("/*")
-			state.inBlockComment = true
-			continue
-		}
-
-		switch char {
-		case '\'':
-			flushToken()
-			current.WriteByte(char)
-			state.inSingleQuote = true
-			continue
-		case '"':
-			flushToken()
-			current.WriteByte(char)
-			state.inDoubleQuote = true
-			continue
-		case '`':
-			flushToken()
-			current.WriteByte(char)
-			state.inBacktick = true
-			continue
-		case '[':
-			flushToken()
-			current.WriteByte(char)
-			state.inBracket = true
-			continue
-		}
-
-		if isIdentifierChar(char) {
-			current.WriteByte(char)
-			token.WriteByte(char)
-			continue
-		}
-
-		flushToken()
-
-		if char == ';' {
-			current.WriteByte(char)
-			if state.inTrigger {
-				if state.seenBegin && state.beginDepth == 0 {
-					flushStatement()
-				}
-				continue
-			}
-			flushStatement()
-			continue
-		}
-
-		current.WriteByte(char)
+	complete, err := isComplete(trailing)
+	if err != nil {
+		return nil, err
+	}
+	if !complete {
+		return nil, errors.New("incomplete SQLite statement at end of input")
 	}
 
-	flushToken()
-
-	if state.inSingleQuote || state.inDoubleQuote || state.inBacktick || state.inBracket ||
-		state.inBlockComment {
-		return nil, errors.New("unterminated SQL literal or comment")
-	}
-	if state.inTrigger && state.beginDepth > 0 {
-		return nil, errors.New("unterminated trigger body")
-	}
-
-	if strings.TrimSpace(current.String()) != "" {
-		flushStatement()
+	statement := normalizeStatement(trailing)
+	if statement != "" {
+		statements = append(statements, statement)
 	}
 
 	return statements, nil
@@ -481,11 +343,6 @@ func containsExecutableSQL(statement string) bool {
 	}
 
 	return false
-}
-
-func isIdentifierChar(char byte) bool {
-	return char == '_' || (char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') ||
-		(char >= '0' && char <= '9')
 }
 
 func isWhitespace(char byte) bool {
