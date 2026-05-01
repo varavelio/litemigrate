@@ -194,7 +194,10 @@ func SplitStatements(sqlText string) ([]string, error) {
 		}
 
 		statement := normalizeStatement(candidate)
-		hasContent, _ := hasExecutableContent(statement)
+		hasContent, unterminatedBlockComment := hasExecutableContent(statement)
+		if unterminatedBlockComment {
+			return nil, errors.New("unterminated block comment in SQLite statement")
+		}
 		if statement != "" && hasContent {
 			statements = append(statements, statement)
 		}

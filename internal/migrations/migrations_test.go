@@ -107,6 +107,15 @@ CREATE INDEX idx_users_id ON users(id);
 		}, statements)
 	})
 
+	t.Run("ignores a trailing line comment after the final statement", func(t *testing.T) {
+		statements, err := SplitStatements(
+			"CREATE TABLE users(id TEXT PRIMARY KEY);\n-- final comment",
+		)
+
+		require.NoError(t, err)
+		require.Equal(t, []string{"CREATE TABLE users(id TEXT PRIMARY KEY);"}, statements)
+	})
+
 	t.Run("rejects an incomplete trailing statement", func(t *testing.T) {
 		_, err := SplitStatements(`
 CREATE TABLE users (id INTEGER PRIMARY KEY);
