@@ -1,0 +1,39 @@
+name: Release Build and Upload
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  build-and-upload:
+    name: Build and Upload to Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Fetch all history for git describe
+
+      - name: Create mount directories
+        run: |
+          mkdir -p ~/.claude ~/.config/opencode ~/.local/share/opencode
+
+      - name: Run ci and build
+        uses: devcontainers/ci@v0.3
+        with:
+          push: never
+          runCmd: task ci && task build-all
+
+      - name: Upload release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            ./dist/litemigrate-linux-amd64
+            ./dist/litemigrate-linux-arm64
+            ./dist/litemigrate-darwin-amd64
+            ./dist/litemigrate-darwin-arm64
+            ./dist/litemigrate-windows-amd64.exe
+            ./dist/litemigrate-windows-arm64.exe
+            ./dist/checksums.txt
