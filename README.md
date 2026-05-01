@@ -93,6 +93,9 @@ Configuration is resolved in this order:
 
 If `--config` is not provided, `litemigrate` automatically looks for `litemigrate.yaml` or `litemigrate.yml` in the current working directory.
 
+You can also use a `.env` file to load variables. `litemigrate` automatically looks for a `.env` file in the current directory, or you can specify a path using the `--dotenv` flag, the `LITEMIGRATE_DOTENV` environment variable, or the `dotenv` key in your YAML config.
+Variables loaded from `.env` or the environment can be injected into your YAML configuration using `env:VAR_NAME`.
+
 Flags and environment variables intentionally mirror the YAML structure:
 
 1. YAML keys use nesting, such as `rqlite.url`.
@@ -102,6 +105,7 @@ Flags and environment variables intentionally mirror the YAML structure:
 ## YAML Configuration
 
 ```yaml
+dotenv: ./.env
 driver: rqlite
 directory: ./migrations
 
@@ -109,10 +113,10 @@ compile:
   output: ./schema.sql
 
 rqlite:
-  url: http://localhost:4001
+  url: "env:DB_URL"
   timeout: 30s
   username: admin
-  password: secret
+  password: "env:DB_PASSWORD"
   headers:
     X-Environment: local
 ```
@@ -120,6 +124,7 @@ rqlite:
 ## Environment Variables
 
 ```text
+LITEMIGRATE_DOTENV
 LITEMIGRATE_CONFIG
 LITEMIGRATE_DRIVER
 LITEMIGRATE_DIRECTORY
@@ -142,6 +147,7 @@ LITEMIGRATE_RQLITE_HEADERS=Authorization=Bearer token,X-Trace-ID=abc123
 ## Common Flags
 
 ```text
+--dotenv <path>
 --config <path>
 --driver <name>
 --directory <path>

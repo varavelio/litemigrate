@@ -105,4 +105,95 @@ rqlite:
 
 		require.Error(t, err)
 	})
+
+	t.Run("resolves variables using env file and environment", func(t *testing.T) {
+		tempDir := t.TempDir()
+
+		envPath := filepath.Join(tempDir, ".env")
+		err := os.WriteFile(envPath, []byte(`
+DB_PASS=mysecret
+DB_PORT=4001
+ENV_TIMEOUT=1m
+ENV_HEADER_VAL=header-from-env
+`), 0o600)
+		require.NoError(t, err)
+
+		configPath := filepath.Join(tempDir, "litemigrate.yaml")
+		err = os.WriteFile(configPath, []byte(`
+rqlite:
+  url: "env:DB_PORT"
+  password: "env:DB_PASS"
+  timeout: "env:ENV_TIMEOUT"
+  headers:
+    X-Custom: "env:ENV_HEADER_VAL"
+`), 0o600)
+		require.NoError(t, err)
+
+		loader := NewLoader()
+		loader.Getwd = func() (string, error) {
+			return tempDir, nil
+		}
+
+		cfg, err := loader.Load(Flags{ConfigPath: configPath, Dotenv: envPath})
+
+		require.NoError(t, err)
+		require.Equal(t, "4001", cfg.RQLite.URL)
+		require.Equal(t, "mysecret", cfg.RQLite.Password)
+		require.Equal(t, "1m0s", cfg.RQLite.Timeout.String())
+		require.Equal(t, "header-from-env", cfg.RQLite.Headers["X-Custom"])
+	})
+
+	t.Run("resolves variables in flags using env file", func(t *testing.T) {
+		tempDir := t.TempDir()
+
+		envPath := filepath.Join(tempDir, ".env")
+		err := os.WriteFile(envPath, []byte(`
+FLAG_USER=flag-user
+FLAG_PASS=flag-pass
+`), 0o600)
+		require.NoError(t, err)
+
+		loader := NewLoader()
+		loader.Getwd = func() (string, error) {
+			return tempDir, nil
+		}
+
+		cfg, err := loader.Load(Flags{
+			Dotenv:         envPath,
+			RQLiteUsername: "env:FLAG_USER",
+			RQLitePassword: "env:FLAG_PASS",
+		})
+
+		require.NoError(t, err)
+		require.Equal(t, "flag-user", cfg.RQLite.Username)
+		require.Equal(t, "flag-pass", cfg.RQLite.Password)
+	})
+
+	t.Run("resolves dotenv using yaml configuration", func(t *testing.T) {
+		tempDir := t.TempDir()
+
+		envPath := filepath.Join(tempDir, "custom.env")
+		err := os.WriteFile(envPath, []byte(`
+YAML_DB_PASS=yaml-secret
+`), 0o600)
+		require.NoError(t, err)
+
+		configPath := filepath.Join(tempDir, "litemigrate.yaml")
+		err = os.WriteFile(configPath, []byte(`
+dotenv: custom.env
+rqlite:
+  password: "env:YAML_DB_PASS"
+`), 0o600)
+		require.NoError(t, err)
+
+		loader := NewLoader()
+		loader.Getwd = func() (string, error) {
+			return tempDir, nil
+		}
+
+		cfg, err := loader.Load(Flags{ConfigPath: configPath})
+
+		require.NoError(t, err)
+		require.Equal(t, "yaml-secret", cfg.RQLite.Password)
+	})
 }

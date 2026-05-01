@@ -166,6 +166,7 @@ Usage:
   litemigrate help
 
 Common flags:
+  --dotenv <path>
   --config <path>
   --driver <name>
   --directory <path>
@@ -192,6 +193,12 @@ func bindCommonFlags(flagSet *flag.FlagSet, flags *config.Flags) commonFlagBinde
 		headersValue: &headersValue,
 	}
 
+	flagSet.StringVar(
+		&flags.Dotenv,
+		"dotenv",
+		flags.Dotenv,
+		"path to the .env file",
+	)
 	flagSet.StringVar(
 		&flags.ConfigPath,
 		"config",
@@ -282,6 +289,7 @@ func parseCommonFlags(name string, args []string, flags *config.Flags) error {
 
 func consumesRootValue(argument string) bool {
 	for _, name := range []string{
+		"--dotenv",
 		"--config",
 		"--driver",
 		"--directory",

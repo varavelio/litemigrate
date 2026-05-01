@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/joho/godotenv"
 	"gopkg.in/yaml.v3"
 )
 
@@ -52,6 +53,8 @@ type RQLiteConfig struct {
 
 // Flags contains flag-derived configuration overrides.
 type Flags struct {
+	// Dotenv points to an explicit .env file.
+	Dotenv string
 	// ConfigPath points to an explicit configuration file.
 	ConfigPath string
 	// Driver overrides the configured runtime backend.
@@ -85,6 +88,7 @@ type Loader struct {
 }
 
 type rawConfig struct {
+	Dotenv    string           `yaml:"dotenv"`
 	Driver    string           `yaml:"driver"`
 	Directory string           `yaml:"directory"`
 	Compile   rawCompileConfig `yaml:"compile"`
@@ -127,30 +131,116 @@ func (loader Loader) Load(flags Flags) (Config, error) {
 		},
 	}
 
-	configPath, explicit, err := loader.resolveConfigPath(flags)
+	configPath, explicitConfig, err := loader.resolveConfigPath(flags)
 	if err != nil {
 		return Config{}, err
 	}
+
+	var fileConfig rawConfig
 	if configPath != "" {
-		fileConfig, loadErr := loader.loadFileConfig(configPath)
+		var loadErr error
+		fileConfig, loadErr = loader.loadFileConfig(configPath)
 		if loadErr != nil {
 			return Config{}, loadErr
 		}
-		if err := applyRawConfig(&config, fileConfig); err != nil {
-			return Config{}, fmt.Errorf("apply config file %q: %w", configPath, err)
-		}
-	} else if explicit {
+	} else if explicitConfig {
 		return Config{}, fmt.Errorf("config file %q does not exist", flags.ConfigPath)
 	}
 
-	if err := applyRawConfig(&config, loader.loadEnvConfig()); err != nil {
+	envPath, envExplicit, err := loader.resolveDotenvPath(flags, fileConfig)
+	if err != nil {
+		return Config{}, err
+	}
+
+	envMap := make(map[string]string)
+	if envPath != "" {
+		content, err := loader.ReadFile(envPath)
+		if err != nil {
+			if envExplicit || !errors.Is(err, os.ErrNotExist) {
+				return Config{}, fmt.Errorf("read dotenv file %q: %w", envPath, err)
+			}
+		} else {
+			parsed, err := godotenv.Unmarshal(string(content))
+			if err != nil {
+				return Config{}, fmt.Errorf("parse dotenv file %q: %w", envPath, err)
+			}
+			envMap = parsed
+		}
+	}
+
+	lookupEnv := func(key string) (string, bool) {
+		if val, ok := envMap[key]; ok {
+			return val, true
+		}
+		return loader.LookupEnv(key)
+	}
+
+	expand := func(val string) string {
+		trimmed := strings.TrimSpace(val)
+		if strings.HasPrefix(trimmed, "env:") {
+			key := strings.TrimSpace(strings.TrimPrefix(trimmed, "env:"))
+			if res, ok := lookupEnv(key); ok {
+				return res
+			}
+			return val
+		}
+		return val
+	}
+
+	if configPath != "" {
+		if err := applyRawConfig(&config, fileConfig, expand); err != nil {
+			return Config{}, fmt.Errorf("apply config file %q: %w", configPath, err)
+		}
+	}
+
+	if err := applyRawConfig(&config, loader.loadEnvConfig(lookupEnv), expand); err != nil {
 		return Config{}, fmt.Errorf("apply environment configuration: %w", err)
 	}
-	if err := applyRawConfig(&config, rawFromFlags(flags)); err != nil {
+	if err := applyRawConfig(&config, rawFromFlags(flags), expand); err != nil {
 		return Config{}, fmt.Errorf("apply flag configuration: %w", err)
 	}
 
 	return config, nil
+}
+
+func (loader Loader) resolveDotenvPath(flags Flags, fileConfig rawConfig) (string, bool, error) {
+	dotenvPath := strings.TrimSpace(flags.Dotenv)
+	if dotenvPath == "" {
+		if value, ok := loader.LookupEnv("LITEMIGRATE_DOTENV"); ok {
+			dotenvPath = strings.TrimSpace(value)
+		}
+	}
+	if dotenvPath == "" {
+		dotenvPath = strings.TrimSpace(fileConfig.Dotenv)
+	}
+
+	if dotenvPath != "" {
+		if !filepath.IsAbs(dotenvPath) {
+			workingDir, err := loader.Getwd()
+			if err != nil {
+				return "", false, fmt.Errorf("get working directory: %w", err)
+			}
+			dotenvPath = filepath.Join(workingDir, dotenvPath)
+		}
+		if _, err := loader.Stat(dotenvPath); err != nil {
+			return "", true, fmt.Errorf("stat dotenv file %q: %w", dotenvPath, err)
+		}
+		return dotenvPath, true, nil
+	}
+
+	workingDir, err := loader.Getwd()
+	if err != nil {
+		return "", false, fmt.Errorf("get working directory: %w", err)
+	}
+
+	path := filepath.Join(workingDir, ".env")
+	if _, statErr := loader.Stat(path); statErr == nil {
+		return path, false, nil
+	} else if !errors.Is(statErr, os.ErrNotExist) {
+		return "", false, fmt.Errorf("stat dotenv file %q: %w", path, statErr)
+	}
+
+	return path, false, nil
 }
 
 func (loader Loader) resolveConfigPath(flags Flags) (string, bool, error) {
@@ -198,25 +288,27 @@ func (loader Loader) loadFileConfig(path string) (rawConfig, error) {
 	return loaded, nil
 }
 
-func (loader Loader) loadEnvConfig() rawConfig {
+func (loader Loader) loadEnvConfig(lookupEnv func(string) (string, bool)) rawConfig {
 	return rawConfig{
-		Driver:    readEnv(loader.LookupEnv, "LITEMIGRATE_DRIVER"),
-		Directory: readEnv(loader.LookupEnv, "LITEMIGRATE_DIRECTORY"),
+		Dotenv:    readEnv(lookupEnv, "LITEMIGRATE_DOTENV"),
+		Driver:    readEnv(lookupEnv, "LITEMIGRATE_DRIVER"),
+		Directory: readEnv(lookupEnv, "LITEMIGRATE_DIRECTORY"),
 		Compile: rawCompileConfig{
-			Output: readEnv(loader.LookupEnv, "LITEMIGRATE_COMPILE_OUTPUT"),
+			Output: readEnv(lookupEnv, "LITEMIGRATE_COMPILE_OUTPUT"),
 		},
 		RQLite: rawRQLiteConfig{
-			URL:      readEnv(loader.LookupEnv, "LITEMIGRATE_RQLITE_URL"),
-			Timeout:  readEnv(loader.LookupEnv, "LITEMIGRATE_RQLITE_TIMEOUT"),
-			Username: readEnv(loader.LookupEnv, "LITEMIGRATE_RQLITE_USERNAME"),
-			Password: readEnv(loader.LookupEnv, "LITEMIGRATE_RQLITE_PASSWORD"),
-			Headers:  parseHeaderList(readEnv(loader.LookupEnv, "LITEMIGRATE_RQLITE_HEADERS")),
+			URL:      readEnv(lookupEnv, "LITEMIGRATE_RQLITE_URL"),
+			Timeout:  readEnv(lookupEnv, "LITEMIGRATE_RQLITE_TIMEOUT"),
+			Username: readEnv(lookupEnv, "LITEMIGRATE_RQLITE_USERNAME"),
+			Password: readEnv(lookupEnv, "LITEMIGRATE_RQLITE_PASSWORD"),
+			Headers:  parseHeaderList(readEnv(lookupEnv, "LITEMIGRATE_RQLITE_HEADERS")),
 		},
 	}
 }
 
 func rawFromFlags(flags Flags) rawConfig {
 	return rawConfig{
+		Dotenv:    flags.Dotenv,
 		Driver:    flags.Driver,
 		Directory: flags.Directory,
 		Compile: rawCompileConfig{
@@ -232,42 +324,45 @@ func rawFromFlags(flags Flags) rawConfig {
 	}
 }
 
-func applyRawConfig(config *Config, raw rawConfig) error {
-	if strings.TrimSpace(raw.Driver) != "" {
-		config.Driver = strings.TrimSpace(raw.Driver)
+func applyRawConfig(config *Config, raw rawConfig, expand func(string) string) error {
+	if val := strings.TrimSpace(raw.Driver); val != "" {
+		config.Driver = strings.TrimSpace(expand(val))
 	}
-	if strings.TrimSpace(raw.Directory) != "" {
-		config.Directory = strings.TrimSpace(raw.Directory)
+	if val := strings.TrimSpace(raw.Directory); val != "" {
+		config.Directory = strings.TrimSpace(expand(val))
 	}
-	if strings.TrimSpace(raw.Compile.Output) != "" {
-		config.Compile.Output = strings.TrimSpace(raw.Compile.Output)
+	if val := strings.TrimSpace(raw.Compile.Output); val != "" {
+		config.Compile.Output = strings.TrimSpace(expand(val))
 	}
-	if strings.TrimSpace(raw.RQLite.URL) != "" {
-		config.RQLite.URL = strings.TrimSpace(raw.RQLite.URL)
+	if val := strings.TrimSpace(raw.RQLite.URL); val != "" {
+		config.RQLite.URL = strings.TrimSpace(expand(val))
 	}
-	if strings.TrimSpace(raw.RQLite.Timeout) != "" {
-		parsed, err := time.ParseDuration(strings.TrimSpace(raw.RQLite.Timeout))
-		if err != nil {
-			return fmt.Errorf("parse rqlite timeout %q: %w", raw.RQLite.Timeout, err)
+	if val := strings.TrimSpace(raw.RQLite.Timeout); val != "" {
+		expandedTimeout := strings.TrimSpace(expand(val))
+		if expandedTimeout != "" {
+			parsed, err := time.ParseDuration(expandedTimeout)
+			if err != nil {
+				return fmt.Errorf("parse rqlite timeout %q: %w", expandedTimeout, err)
+			}
+			config.RQLite.Timeout = parsed
 		}
-		config.RQLite.Timeout = parsed
 	}
-	if strings.TrimSpace(raw.RQLite.Username) != "" {
-		config.RQLite.Username = strings.TrimSpace(raw.RQLite.Username)
+	if val := strings.TrimSpace(raw.RQLite.Username); val != "" {
+		config.RQLite.Username = strings.TrimSpace(expand(val))
 	}
-	if strings.TrimSpace(raw.RQLite.Password) != "" {
-		config.RQLite.Password = strings.TrimSpace(raw.RQLite.Password)
+	if val := strings.TrimSpace(raw.RQLite.Password); val != "" {
+		config.RQLite.Password = strings.TrimSpace(expand(val))
 	}
 	if len(raw.RQLite.Headers) > 0 {
 		if config.RQLite.Headers == nil {
 			config.RQLite.Headers = map[string]string{}
 		}
 		for key, value := range raw.RQLite.Headers {
-			trimmedKey := strings.TrimSpace(key)
+			trimmedKey := strings.TrimSpace(expand(key))
 			if trimmedKey == "" {
 				continue
 			}
-			config.RQLite.Headers[trimmedKey] = strings.TrimSpace(value)
+			config.RQLite.Headers[trimmedKey] = strings.TrimSpace(expand(value))
 		}
 	}
 
