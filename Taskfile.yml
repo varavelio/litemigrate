@@ -9,10 +9,15 @@ tasks:
       - task: format
       - task: test
       - task: lint
+      - task: build
 
   deps:
     desc: Install dependencies
     cmd: go mod download
+
+  build:
+    desc: Build the project
+    cmd: go build -o dist/litemigrate cmd/litemigrate/main.go
 
   format:
     desc: Format code
