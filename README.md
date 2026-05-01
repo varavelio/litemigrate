@@ -1,2 +1,203 @@
-# rqlmigrate
-rqlite schema migration tool
+# Lite Migrate
+
+<p>
+  <a href="https://github.com/varavelio/litemigrate/actions">
+    <img src="https://github.com/varavelio/litemigrate/actions/workflows/ci.yaml/badge.svg" alt="CI status"/>
+  </a>
+  <a href="https://goreportcard.com/report/varavelio/litemigrate">
+    <img src="https://goreportcard.com/badge/varavelio/litemigrate" alt="Go Report Card"/>
+  </a>
+  <a href="https://github.com/varavelio/litemigrate/releases/latest">
+    <img src="https://img.shields.io/github/release/varavelio/litemigrate.svg" alt="Release Version"/>
+  </a>
+  <a href="LICENSE">
+    <img src="https://img.shields.io/github/license/varavelio/litemigrate.svg" alt="License"/>
+  </a>
+  <a href="https://github.com/varavelio/litemigrate">
+    <img src="https://img.shields.io/github/stars/varavelio/litemigrate?style=flat&label=github+stars"/>
+  </a>
+</p>
+
+<p>
+  <a href="https://varavel.com">
+    <img src="https://cdn.jsdelivr.net/gh/varavelio/brand@1.0.0/dist/badges/project.svg" alt="A Varavel project"/>
+  </a>
+</p>
+
+`litemigrate` is a language agnostic schema migration tool for SQLite-compatible databases.
+
+The first implementation is intentionally focused on `rqlite`.
+
+## Features
+
+1. One `.sql` file per migration.
+2. Implicit `up` section and optional `down` section in the same file.
+3. Atomic execution of each migration.
+4. `up` and `down` operate on one migration by default.
+5. `--all` opt-in for bulk apply or bulk rollback.
+6. `compile` command to materialize the final SQLite schema locally.
+7. Configuration through flags, environment variables, and YAML.
+
+## Commands
+
+```text
+litemigrate new <name>
+litemigrate up [--all]
+litemigrate down [--all]
+litemigrate compile [--compile-output path]
+```
+
+## Migration Format
+
+Migration filenames use UTC timestamps with second precision:
+
+```text
+YYYYMMDDHHMMSS_<name>.sql
+```
+
+Example:
+
+```text
+20260501143015_create_users.sql
+```
+
+Migration contents use implicit `up` SQL and optional `down` SQL separated by the literal marker `-- litemigrate down`.
+
+```sql
+CREATE TABLE users (
+  id INTEGER PRIMARY KEY,
+  email TEXT NOT NULL UNIQUE
+);
+
+CREATE INDEX idx_users_email ON users(email);
+
+-- litemigrate down
+
+DROP INDEX idx_users_email;
+DROP TABLE users;
+```
+
+If the `down` marker is absent, the migration is considered irreversible.
+
+## Configuration Precedence
+
+Configuration is resolved in this order:
+
+1. CLI flags
+2. Environment variables
+3. YAML config file
+4. Internal defaults
+
+If `--config` is not provided, `litemigrate` automatically looks for `litemigrate.yaml` or `litemigrate.yml` in the current working directory.
+
+Flags and environment variables intentionally mirror the YAML structure:
+
+1. YAML keys use nesting, such as `rqlite.url`.
+2. Environment variables replace dots with underscores, such as `LITEMIGRATE_RQLITE_URL`.
+3. Flags replace dots with hyphens, such as `--rqlite-url`.
+
+## YAML Configuration
+
+```yaml
+driver: rqlite
+directory: ./migrations
+
+compile:
+  output: ./schema.sql
+
+rqlite:
+  url: http://localhost:4001
+  timeout: 30s
+  username: admin
+  password: secret
+  headers:
+    X-Environment: local
+```
+
+## Environment Variables
+
+```text
+LITEMIGRATE_CONFIG
+LITEMIGRATE_DRIVER
+LITEMIGRATE_DIRECTORY
+LITEMIGRATE_COMPILE_OUTPUT
+LITEMIGRATE_RQLITE_URL
+LITEMIGRATE_RQLITE_TIMEOUT
+LITEMIGRATE_RQLITE_USERNAME
+LITEMIGRATE_RQLITE_PASSWORD
+LITEMIGRATE_RQLITE_HEADERS
+```
+
+`LITEMIGRATE_RQLITE_HEADERS` accepts comma-separated `Key=Value` pairs.
+
+Example:
+
+```text
+LITEMIGRATE_RQLITE_HEADERS=Authorization=Bearer token,X-Trace-ID=abc123
+```
+
+## Common Flags
+
+```text
+--config <path>
+--driver <name>
+--directory <path>
+--compile-output <path>
+--rqlite-url <url>
+--rqlite-timeout <duration>
+--rqlite-username <value>
+--rqlite-password <value>
+--rqlite-headers <Key=Value,Key=Value>
+```
+
+## Examples
+
+Create a migration:
+
+```bash
+litemigrate new create_users
+```
+
+Apply the next pending migration:
+
+```bash
+litemigrate up --directory ./migrations --rqlite-url http://localhost:4001
+```
+
+Apply all pending migrations:
+
+```bash
+litemigrate up --all --directory ./migrations --rqlite-url http://localhost:4001
+```
+
+Roll back the most recent migration:
+
+```bash
+litemigrate down --directory ./migrations --rqlite-url http://localhost:4001
+```
+
+Compile the final schema to stdout:
+
+```bash
+litemigrate compile --directory ./migrations
+```
+
+Compile the final schema to a file:
+
+```bash
+litemigrate compile --directory ./migrations --compile-output ./schema.sql
+```
+
+## Metadata Table
+
+Applied migrations are tracked in the target database using the internal table:
+
+```text
+_litemigrate_migrations
+```
+
+This table is excluded from `compile` output.
+
+## License
+
+This project is released under the MIT License. See [LICENSE](LICENSE).
