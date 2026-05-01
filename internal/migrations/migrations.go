@@ -9,9 +9,6 @@ import (
 	"slices"
 	"strings"
 	"time"
-
-	"modernc.org/libc"
-	sqlite3 "modernc.org/sqlite/lib"
 )
 
 const (
@@ -152,26 +149,6 @@ func ParseFile(path string, contents []byte) (File, error) {
 // The input must contain complete SQLite statements terminated the way SQLite
 // expects, including trigger bodies.
 func SplitStatements(sqlText string) ([]string, error) {
-	tls := libc.NewTLS()
-	defer tls.Close()
-
-	isComplete := func(statement string) (bool, error) {
-		cString, err := libc.CString(statement)
-		if err != nil {
-			return false, fmt.Errorf("allocate SQL text: %w", err)
-		}
-		defer libc.Xfree(tls, cString)
-
-		switch sqlite3.Xsqlite3_complete(tls, cString) {
-		case 0:
-			return false, nil
-		case 1:
-			return true, nil
-		default:
-			return false, errors.New("sqlite3_complete returned an unexpected result")
-		}
-	}
-
 	normalizeStatement := func(statement string) string {
 		return strings.TrimSpace(statement)
 	}
@@ -185,7 +162,7 @@ func SplitStatements(sqlText string) ([]string, error) {
 		}
 
 		candidate := sqlText[statementStart : index+1]
-		complete, err := isComplete(candidate)
+		complete, err := sqliteComplete(candidate)
 		if err != nil {
 			return nil, err
 		}
