@@ -35,8 +35,8 @@ CREATE INDEX idx_users_id ON users(id);
 
 		require.NoError(t, err)
 		require.Equal(t, []string{
-			"CREATE TABLE users (id INTEGER PRIMARY KEY)",
-			"CREATE INDEX idx_users_id ON users(id)",
+			"CREATE TABLE users (id INTEGER PRIMARY KEY);",
+			"CREATE INDEX idx_users_id ON users(id);",
 		}, statements)
 	})
 
@@ -48,8 +48,8 @@ UPDATE users SET note = "semi;colon" WHERE id = 1;
 
 		require.NoError(t, err)
 		require.Len(t, statements, 2)
-		require.Equal(t, "INSERT INTO audit_log(message) VALUES('created; user')", statements[0])
-		require.Equal(t, `UPDATE users SET note = "semi;colon" WHERE id = 1`, statements[1])
+		require.Equal(t, "INSERT INTO audit_log(message) VALUES('created; user');", statements[0])
+		require.Equal(t, `UPDATE users SET note = "semi;colon" WHERE id = 1;`, statements[1])
 	})
 
 	t.Run("keeps a trigger definition as a single statement", func(t *testing.T) {
@@ -57,7 +57,7 @@ UPDATE users SET note = "semi;colon" WHERE id = 1;
 CREATE TRIGGER users_ai
 AFTER INSERT ON users
 BEGIN
-  INSERT INTO audit_log(user_id, action) VALUES (NEW.id, 'created');
+  INSERT INTO audit_log(user_id, action) VALUES (NEW.id, 'hello; world');
   UPDATE users SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
 END;
 
@@ -71,10 +71,11 @@ CREATE TABLE audit_log (
 		require.NoError(t, err)
 		require.Len(t, statements, 2)
 		require.Contains(t, statements[0], "CREATE TRIGGER users_ai")
+		require.Contains(t, statements[0], "VALUES (NEW.id, 'hello; world');")
 		require.Contains(t, statements[0], "UPDATE users SET updated_at = CURRENT_TIMESTAMP")
 		require.Equal(
 			t,
-			"CREATE TABLE audit_log (\n  id INTEGER PRIMARY KEY,\n  user_id INTEGER NOT NULL,\n  action TEXT NOT NULL\n)",
+			"CREATE TABLE audit_log (\n  id INTEGER PRIMARY KEY,\n  user_id INTEGER NOT NULL,\n  action TEXT NOT NULL\n);",
 			statements[1],
 		)
 	})
@@ -89,8 +90,8 @@ CREATE INDEX idx_users_id ON users(id);
 
 		require.NoError(t, err)
 		require.Equal(t, []string{
-			"-- comment with a ; semicolon\nCREATE TABLE users (id INTEGER PRIMARY KEY)",
-			"/* trailing ; comment */\n/* block ; comment */\nCREATE INDEX idx_users_id ON users(id)",
+			"-- comment with a ; semicolon\nCREATE TABLE users (id INTEGER PRIMARY KEY);",
+			"/* trailing ; comment */\n/* block ; comment */\nCREATE INDEX idx_users_id ON users(id);",
 		}, statements)
 	})
 
@@ -101,8 +102,8 @@ CREATE INDEX idx_users_id ON users(id);
 
 		require.NoError(t, err)
 		require.Equal(t, []string{
-			"CREATE TABLE users (id INTEGER PRIMARY KEY)",
-			"CREATE INDEX idx_users_id ON users(id)",
+			"CREATE TABLE users (id INTEGER PRIMARY KEY);",
+			"CREATE INDEX idx_users_id ON users(id);",
 		}, statements)
 	})
 
@@ -113,7 +114,7 @@ CREATE INDEX idx_users_id ON users(id)
 `)
 
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "incomplete")
+		require.Contains(t, err.Error(), "every statement must end with semicolon")
 	})
 }
 
@@ -139,11 +140,11 @@ DROP TABLE users;
 		require.Equal(
 			t,
 			[]string{
-				"CREATE TABLE users (\n  id INTEGER PRIMARY KEY,\n  email TEXT NOT NULL UNIQUE\n)",
+				"CREATE TABLE users (\n  id INTEGER PRIMARY KEY,\n  email TEXT NOT NULL UNIQUE\n);",
 			},
 			migration.UpStatements,
 		)
-		require.Equal(t, []string{"DROP TABLE users"}, migration.DownStatements)
+		require.Equal(t, []string{"DROP TABLE users;"}, migration.DownStatements)
 	})
 
 	t.Run("rejects empty up content", func(t *testing.T) {

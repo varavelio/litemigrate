@@ -173,12 +173,10 @@ func SplitStatements(sqlText string) ([]string, error) {
 	}
 
 	normalizeStatement := func(statement string) string {
-		trimmed := strings.TrimSpace(statement)
-		trimmed = strings.TrimSuffix(trimmed, ";")
-		return strings.TrimSpace(trimmed)
+		return strings.TrimSpace(statement)
 	}
 
-	statements := make([]string, 0, strings.Count(sqlText, ";"))
+	statements := make([]string, 0)
 	statementStart := 0
 
 	for index := range len(sqlText) {
@@ -196,7 +194,7 @@ func SplitStatements(sqlText string) ([]string, error) {
 		}
 
 		statement := normalizeStatement(candidate)
-		if statement != "" && containsExecutableSQL(statement) {
+		if statement != "" && hasExecutableContent(statement) {
 			statements = append(statements, statement)
 		}
 		statementStart = index + 1
@@ -206,24 +204,12 @@ func SplitStatements(sqlText string) ([]string, error) {
 	if strings.TrimSpace(trailing) == "" {
 		return statements, nil
 	}
-	if !containsExecutableSQL(trailing) {
+	if !hasExecutableContent(trailing) {
 		return statements, nil
 	}
-
-	complete, err := isComplete(trailing)
-	if err != nil {
-		return nil, err
-	}
-	if !complete {
-		return nil, errors.New("incomplete SQLite statement at end of input")
-	}
-
-	statement := normalizeStatement(trailing)
-	if statement != "" {
-		statements = append(statements, statement)
-	}
-
-	return statements, nil
+	return nil, errors.New(
+		"incomplete SQLite statement at end of input; every statement must end with semicolon",
+	)
 }
 
 func splitSections(contents string) (string, string, error) {
@@ -285,15 +271,11 @@ func slugify(description string) string {
 	return strings.Trim(builder.String(), "_")
 }
 
-func containsExecutableSQL(statement string) bool {
-	var (
-		inLineComment  bool
-		inBlockComment bool
-		inSingleQuote  bool
-		inDoubleQuote  bool
-	)
+func hasExecutableContent(statement string) bool {
+	inLineComment := false
+	inBlockComment := false
 
-	for index := range len(statement) {
+	for index := 0; index < len(statement); index++ {
 		char := statement[index]
 		next := byte(0)
 		if index+1 < len(statement) {
@@ -309,33 +291,20 @@ func containsExecutableSQL(statement string) bool {
 		case inBlockComment:
 			if char == '*' && next == '/' {
 				inBlockComment = false
-			}
-			continue
-		case inSingleQuote:
-			if char == '\'' && next != '\'' {
-				inSingleQuote = false
-			}
-			continue
-		case inDoubleQuote:
-			if char == '"' && next != '"' {
-				inDoubleQuote = false
+				index++
 			}
 			continue
 		}
 
 		if char == '-' && next == '-' {
 			inLineComment = true
+			index++
 			continue
 		}
 		if char == '/' && next == '*' {
 			inBlockComment = true
+			index++
 			continue
-		}
-		if char == '\'' {
-			return true
-		}
-		if char == '"' {
-			return true
 		}
 		if !isWhitespace(char) {
 			return true
