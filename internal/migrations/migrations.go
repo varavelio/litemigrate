@@ -194,7 +194,8 @@ func SplitStatements(sqlText string) ([]string, error) {
 		}
 
 		statement := normalizeStatement(candidate)
-		if statement != "" && hasExecutableContent(statement) {
+		hasContent, _ := hasExecutableContent(statement)
+		if statement != "" && hasContent {
 			statements = append(statements, statement)
 		}
 		statementStart = index + 1
@@ -204,7 +205,11 @@ func SplitStatements(sqlText string) ([]string, error) {
 	if strings.TrimSpace(trailing) == "" {
 		return statements, nil
 	}
-	if !hasExecutableContent(trailing) {
+	hasContent, unterminatedBlockComment := hasExecutableContent(trailing)
+	if unterminatedBlockComment {
+		return nil, errors.New("unterminated block comment at end of input")
+	}
+	if !hasContent {
 		return statements, nil
 	}
 	return nil, errors.New(
@@ -271,7 +276,7 @@ func slugify(description string) string {
 	return strings.Trim(builder.String(), "_")
 }
 
-func hasExecutableContent(statement string) bool {
+func hasExecutableContent(statement string) (hasContent, unterminatedBlockComment bool) {
 	inLineComment := false
 	inBlockComment := false
 
@@ -307,11 +312,11 @@ func hasExecutableContent(statement string) bool {
 			continue
 		}
 		if !isWhitespace(char) {
-			return true
+			return true, false
 		}
 	}
 
-	return false
+	return false, inBlockComment
 }
 
 func isWhitespace(char byte) bool {

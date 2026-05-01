@@ -116,6 +116,25 @@ CREATE INDEX idx_users_id ON users(id)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "every statement must end with semicolon")
 	})
+
+	t.Run("rejects an unterminated trailing block comment after a statement", func(t *testing.T) {
+		_, err := SplitStatements(`
+CREATE TABLE users (id INTEGER PRIMARY KEY);
+/* unterminated comment
+`)
+
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "unterminated block comment")
+	})
+
+	t.Run("rejects an unterminated block comment with no statements", func(t *testing.T) {
+		_, err := SplitStatements(`
+/* unterminated comment
+`)
+
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "unterminated block comment")
+	})
 }
 
 func TestParseFile(t *testing.T) {
