@@ -91,6 +91,7 @@ func (app *App) runNew(cfg config.Config, name string) error {
 -- Write your migration's forward changes here.
 
 -- litemigrate down
+
 -- Write your migration's rollback changes here.
 `) + "\n"
 
