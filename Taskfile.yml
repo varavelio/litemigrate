@@ -6,6 +6,7 @@ tasks:
   ci:
     desc: Run CI tasks
     cmds:
+      - task: format
       - task: test
       - task: lint
 
