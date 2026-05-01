@@ -64,6 +64,8 @@ Example:
 
 Migration contents use implicit `up` SQL and optional `down` SQL separated by the literal marker `-- litemigrate down`.
 
+Each statement must be a complete SQLite statement terminated the way SQLite expects.
+
 ```sql
 CREATE TABLE users (
   id INTEGER PRIMARY KEY,
