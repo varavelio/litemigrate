@@ -20,6 +20,8 @@ const (
 	CommandUp CommandName = "up"
 	// CommandDown rolls back applied migrations.
 	CommandDown CommandName = "down"
+	// CommandStatus reports a short summary of applied and pending migrations.
+	CommandStatus CommandName = "status"
 	// CommandCompile renders the final schema from local migrations.
 	CommandCompile CommandName = "compile"
 )
@@ -98,6 +100,15 @@ func Parse(args []string) (Parsed, error) {
 		if flagSet.NArg() != 0 {
 			return Parsed{}, errors.New("compile does not accept positional arguments")
 		}
+	case CommandStatus:
+		flagSet := newCommandFlagSet(string(CommandStatus))
+		binder := bindCommonFlags(flagSet, &parsed.Flags)
+		if err := binder.parse(commandArgs); err != nil {
+			return Parsed{}, err
+		}
+		if flagSet.NArg() != 0 {
+			return Parsed{}, errors.New("status does not accept positional arguments")
+		}
 	default:
 		return Parsed{}, fmt.Errorf("unknown command %q", parsed.Name)
 	}
@@ -112,6 +123,7 @@ Usage:
   litemigrate new <name> [flags]
   litemigrate up [--all] [flags]
   litemigrate down [--all] [flags]
+  litemigrate status [flags]
   litemigrate compile [--compile-output path] [flags]
 
 Common flags:

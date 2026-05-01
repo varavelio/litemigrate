@@ -206,6 +206,53 @@ func TestAppRunCompile(t *testing.T) {
 	})
 }
 
+func TestAppRunStatus(t *testing.T) {
+	t.Run("prints a brief migration summary", func(t *testing.T) {
+		dir := t.TempDir()
+		writeMigration(
+			t,
+			dir,
+			"20260501143015_create_users.sql",
+			"CREATE TABLE users (id INTEGER PRIMARY KEY);",
+		)
+		writeMigration(
+			t,
+			dir,
+			"20260501143016_create_accounts.sql",
+			"CREATE TABLE accounts (id INTEGER PRIMARY KEY);",
+		)
+
+		database := newSQLiteTestDriver(t)
+		stdout := &bytes.Buffer{}
+		application := New(stdout, &bytes.Buffer{})
+		application.OpenDriver = func(cfg config.Config) (drivers.Driver, error) {
+			return database, nil
+		}
+		application.Now = func() time.Time {
+			return time.Date(2026, time.May, 1, 14, 30, 15, 0, time.UTC)
+		}
+
+		err := application.Run(
+			context.Background(),
+			[]string{"up", "--directory", dir, "--rqlite-url", "http://example.invalid"},
+		)
+		require.NoError(t, err)
+
+		stdout.Reset()
+
+		err = application.Run(
+			context.Background(),
+			[]string{"status", "--directory", dir, "--rqlite-url", "http://example.invalid"},
+		)
+		require.NoError(t, err)
+		require.Equal(
+			t,
+			"Applied: 1\nPending: 1\nLast applied: 20260501143015_create_users.sql\nNext pending: 20260501143016_create_accounts.sql\n",
+			stdout.String(),
+		)
+	})
+}
+
 type sqliteTestDriver struct {
 	db *sql.DB
 }

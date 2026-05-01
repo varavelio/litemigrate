@@ -42,6 +42,14 @@ func TestParse(t *testing.T) {
 		require.Equal(t, "schema.sql", compiled.Flags.CompileOutput)
 	})
 
+	t.Run("parses the status command", func(t *testing.T) {
+		parsed, err := Parse([]string{"status", "--directory", "./migrations"})
+
+		require.NoError(t, err)
+		require.Equal(t, CommandStatus, parsed.Name)
+		require.Equal(t, "./migrations", parsed.Flags.Directory)
+	})
+
 	t.Run("rejects unknown commands", func(t *testing.T) {
 		_, err := Parse([]string{"unknown"})
 

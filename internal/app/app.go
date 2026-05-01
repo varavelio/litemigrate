@@ -62,6 +62,8 @@ func (app *App) Run(ctx context.Context, args []string) error {
 		return app.runUp(ctx, loadedConfig, parsed.All)
 	case cli.CommandDown:
 		return app.runDown(ctx, loadedConfig, parsed.All)
+	case cli.CommandStatus:
+		return app.runStatus(ctx, loadedConfig)
 	case cli.CommandCompile:
 		return app.runCompile(loadedConfig)
 	default:
@@ -257,6 +259,64 @@ func (app *App) runCompile(cfg config.Config) error {
 	}
 
 	_, err = fmt.Fprintln(app.Stdout, cfg.Compile.Output)
+	return err
+}
+
+func (app *App) runStatus(ctx context.Context, cfg config.Config) error {
+	database, err := app.openValidatedDriver(cfg)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = database.Close()
+	}()
+
+	migrationStore := store.New(database)
+	if err := migrationStore.Ensure(ctx); err != nil {
+		return err
+	}
+
+	files, err := migrations.LoadDir(cfg.Directory)
+	if err != nil {
+		return err
+	}
+
+	applied, err := migrationStore.ListApplied(ctx)
+	if err != nil {
+		return err
+	}
+
+	appliedVersions := make(map[string]struct{}, len(applied))
+	for _, record := range applied {
+		appliedVersions[record.Version] = struct{}{}
+	}
+
+	pending := make([]migrations.File, 0, len(files))
+	for _, file := range files {
+		if _, ok := appliedVersions[file.Version]; ok {
+			continue
+		}
+		pending = append(pending, file)
+	}
+
+	lastApplied := "none"
+	if len(applied) > 0 {
+		lastApplied = applied[len(applied)-1].Name
+	}
+
+	nextPending := "none"
+	if len(pending) > 0 {
+		nextPending = pending[0].Name
+	}
+
+	_, err = fmt.Fprintf(
+		app.Stdout,
+		"Applied: %d\nPending: %d\nLast applied: %s\nNext pending: %s\n",
+		len(applied),
+		len(pending),
+		lastApplied,
+		nextPending,
+	)
 	return err
 }
 

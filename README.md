@@ -44,6 +44,7 @@ The first implementation is intentionally focused on `rqlite`.
 litemigrate new <name>
 litemigrate up [--all]
 litemigrate down [--all]
+litemigrate status
 litemigrate compile [--compile-output path]
 ```
 
@@ -186,6 +187,21 @@ Compile the final schema to a file:
 
 ```bash
 litemigrate compile --directory ./migrations --compile-output ./schema.sql
+```
+
+Show a short migration summary:
+
+```bash
+litemigrate status --directory ./migrations --rqlite-url http://localhost:4001
+```
+
+Example output:
+
+```text
+Applied: 12
+Pending: 2
+Last applied: 20260501143015_create_users.sql
+Next pending: 20260501143110_add_accounts.sql
 ```
 
 ## Metadata Table
