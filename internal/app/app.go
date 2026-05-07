@@ -348,11 +348,11 @@ func (app *App) openValidatedDriver(cfg config.Config) (drivers.Driver, error) {
 		return nil, err
 	}
 	switch cfg.Driver {
-	case "", "rqlite":
+	case "rqlite":
 		if strings.TrimSpace(cfg.RQLite.URL) == "" {
 			return nil, fmt.Errorf("rqlite URL must not be empty")
 		}
-	case "nsqlite":
+	case "", "nsqlite":
 		if strings.TrimSpace(cfg.NSQLite.DSN) == "" {
 			return nil, fmt.Errorf("nsqlite DSN must not be empty")
 		}
@@ -366,7 +366,7 @@ func openDriver(cfg config.Config) (drivers.Driver, error) {
 	}
 
 	switch cfg.Driver {
-	case "", "rqlite":
+	case "rqlite":
 		return rqlite.New(rqlite.Config{
 			URL:      cfg.RQLite.URL,
 			Timeout:  cfg.RQLite.Timeout,
@@ -374,7 +374,7 @@ func openDriver(cfg config.Config) (drivers.Driver, error) {
 			Password: cfg.RQLite.Password,
 			Headers:  cfg.RQLite.Headers,
 		})
-	case "nsqlite":
+	case "", "nsqlite":
 		return nsqlite.New(nsqlite.Config{DSN: cfg.NSQLite.DSN})
 	default:
 		return nil, fmt.Errorf("unsupported driver %q", cfg.Driver)
@@ -382,7 +382,7 @@ func openDriver(cfg config.Config) (drivers.Driver, error) {
 }
 
 func validateDriverName(name string) error {
-	if name == "" || name == "rqlite" || name == "nsqlite" {
+	if name == "" || name == "nsqlite" || name == "rqlite" {
 		return nil
 	}
 	return fmt.Errorf("unsupported driver %q", name)

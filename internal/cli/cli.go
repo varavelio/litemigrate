@@ -171,12 +171,12 @@ Common flags:
   --driver <name>
   --directory <path>
   --compile-output <path>
+  --nsqlite-dsn <dsn>
   --rqlite-url <url>
   --rqlite-timeout <duration>
   --rqlite-username <value>
   --rqlite-password <value>
   --rqlite-headers <Key=Value,Key=Value>
-  --nsqlite-dsn <dsn>
 `)
 }
 

@@ -19,7 +19,7 @@ func TestLoaderLoad(t *testing.T) {
 		cfg, err := loader.Load(Flags{})
 
 		require.NoError(t, err)
-		require.Equal(t, "rqlite", cfg.Driver)
+		require.Equal(t, "nsqlite", cfg.Driver)
 		require.Equal(t, "./migrations", cfg.Directory)
 		require.Equal(t, "30s", cfg.RQLite.Timeout.String())
 		require.Empty(t, cfg.Compile.Output)

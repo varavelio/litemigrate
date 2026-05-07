@@ -61,6 +61,7 @@ func TestAppRunUpAndDown(t *testing.T) {
 		application := New(stdout, &bytes.Buffer{})
 		application.OpenDriver = func(cfg config.Config) (drivers.Driver, error) {
 			require.Equal(t, dir, cfg.Directory)
+			require.Equal(t, "nsqlite", cfg.Driver)
 			return database, nil
 		}
 		application.Now = func() time.Time {
@@ -69,7 +70,7 @@ func TestAppRunUpAndDown(t *testing.T) {
 
 		err := application.Run(
 			context.Background(),
-			[]string{"up", "--directory", dir, "--rqlite-url", "http://example.invalid"},
+			[]string{"up", "--directory", dir, "--nsqlite-dsn", "http://example.invalid"},
 		)
 		require.NoError(t, err)
 		require.Equal(
@@ -82,7 +83,7 @@ func TestAppRunUpAndDown(t *testing.T) {
 
 		err = application.Run(
 			context.Background(),
-			[]string{"up", "--all", "--directory", dir, "--rqlite-url", "http://example.invalid"},
+			[]string{"up", "--all", "--directory", dir, "--nsqlite-dsn", "http://example.invalid"},
 		)
 		require.NoError(t, err)
 		require.Equal(
@@ -113,13 +114,13 @@ DROP TABLE users;
 
 		err := application.Run(
 			context.Background(),
-			[]string{"up", "--directory", dir, "--rqlite-url", "http://example.invalid"},
+			[]string{"up", "--directory", dir, "--nsqlite-dsn", "http://example.invalid"},
 		)
 		require.NoError(t, err)
 
 		err = application.Run(
 			context.Background(),
-			[]string{"down", "--directory", dir, "--rqlite-url", "http://example.invalid"},
+			[]string{"down", "--directory", dir, "--nsqlite-dsn", "http://example.invalid"},
 		)
 		require.NoError(t, err)
 		require.Equal(
@@ -150,13 +151,13 @@ DROP TABLE users;
 
 		err := application.Run(
 			context.Background(),
-			[]string{"up", "--directory", dir, "--rqlite-url", "http://example.invalid"},
+			[]string{"up", "--directory", dir, "--nsqlite-dsn", "http://example.invalid"},
 		)
 		require.NoError(t, err)
 
 		err = application.Run(
 			context.Background(),
-			[]string{"down", "--directory", dir, "--rqlite-url", "http://example.invalid"},
+			[]string{"down", "--directory", dir, "--nsqlite-dsn", "http://example.invalid"},
 		)
 		require.Error(t, err)
 		require.ErrorContains(t, err, "has no down migration")
@@ -234,7 +235,7 @@ func TestAppRunStatus(t *testing.T) {
 
 		err := application.Run(
 			context.Background(),
-			[]string{"up", "--directory", dir, "--rqlite-url", "http://example.invalid"},
+			[]string{"up", "--directory", dir, "--nsqlite-dsn", "http://example.invalid"},
 		)
 		require.NoError(t, err)
 
@@ -242,7 +243,7 @@ func TestAppRunStatus(t *testing.T) {
 
 		err = application.Run(
 			context.Background(),
-			[]string{"status", "--directory", dir, "--rqlite-url", "http://example.invalid"},
+			[]string{"status", "--directory", dir, "--nsqlite-dsn", "http://example.invalid"},
 		)
 		require.NoError(t, err)
 		require.Equal(
@@ -280,6 +281,25 @@ func TestOpenValidatedDriver(t *testing.T) {
 
 		require.Error(t, err)
 		require.ErrorContains(t, err, "nsqlite DSN must not be empty")
+	})
+
+	t.Run("accepts rqlite with a url", func(t *testing.T) {
+		application := New(&bytes.Buffer{}, &bytes.Buffer{})
+		application.OpenDriver = func(cfg config.Config) (drivers.Driver, error) {
+			require.Equal(t, "rqlite", cfg.Driver)
+			require.Equal(t, "http://localhost:4001", cfg.RQLite.URL)
+			return newSQLiteTestDriver(t), nil
+		}
+
+		database, err := application.openValidatedDriver(config.Config{
+			Driver: "rqlite",
+			RQLite: config.RQLiteConfig{
+				URL: "http://localhost:4001",
+			},
+		})
+
+		require.NoError(t, err)
+		require.NoError(t, database.Close())
 	})
 }
 

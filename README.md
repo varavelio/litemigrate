@@ -24,9 +24,9 @@
   </a>
 </p>
 
-`litemigrate` is a language agnostic schema migration tool for SQLite-compatible databases.
+`litemigrate` is a language agnostic schema migration tool built for NSQLite and other SQLite-compatible databases.
 
-The first implementation is intentionally focused on `rqlite`.
+The runtime drivers are `nsqlite` and `rqlite`; `nsqlite` is the default.
 
 ## Features
 
@@ -98,25 +98,41 @@ Variables loaded from `.env` or the environment can be injected into your YAML c
 
 Flags and environment variables intentionally mirror the YAML structure:
 
-1. YAML keys use nesting, such as `rqlite.url`.
-2. Environment variables replace dots with underscores, such as `LITEMIGRATE_RQLITE_URL`.
-3. Flags replace dots with hyphens, such as `--rqlite-url`.
+1. YAML keys use nesting, such as `nsqlite.dsn` or `rqlite.url`.
+2. Environment variables replace dots with underscores, such as `LITEMIGRATE_NSQLITE_DSN` or `LITEMIGRATE_RQLITE_URL`.
+3. Flags replace dots with hyphens, such as `--nsqlite-dsn` or `--rqlite-url`.
 
 ## YAML Configuration
 
 ```yaml
 dotenv: ./.env
-driver: rqlite
+driver: nsqlite
 directory: ./migrations
 
 compile:
   output: ./schema.sql
 
+nsqlite:
+  dsn: "env:NSQLITE_DSN"
+```
+
+The NSQLite DSN uses the same format as the NSQLite Go driver:
+
+```yaml
+nsqlite:
+  dsn: "http://localhost:9876?authToken=secret"
+```
+
+To use rqlite, select the `rqlite` driver and configure its HTTP endpoint:
+
+```yaml
+driver: rqlite
+
 rqlite:
-  url: "env:DB_URL"
+  url: "http://localhost:4001"
   timeout: 30s
   username: admin
-  password: "env:DB_PASSWORD"
+  password: "pass"
   headers:
     X-Environment: local
 ```
@@ -129,6 +145,7 @@ LITEMIGRATE_CONFIG
 LITEMIGRATE_DRIVER
 LITEMIGRATE_DIRECTORY
 LITEMIGRATE_COMPILE_OUTPUT
+LITEMIGRATE_NSQLITE_DSN
 LITEMIGRATE_RQLITE_URL
 LITEMIGRATE_RQLITE_TIMEOUT
 LITEMIGRATE_RQLITE_USERNAME
@@ -152,6 +169,7 @@ LITEMIGRATE_RQLITE_HEADERS=Authorization=Bearer token,X-Trace-ID=abc123
 --driver <name>
 --directory <path>
 --compile-output <path>
+--nsqlite-dsn <dsn>
 --rqlite-url <url>
 --rqlite-timeout <duration>
 --rqlite-username <value>
@@ -170,19 +188,19 @@ litemigrate new create_users
 Apply the next pending migration:
 
 ```bash
-litemigrate up --directory ./migrations --rqlite-url http://localhost:4001
+litemigrate up --directory ./migrations --nsqlite-dsn 'http://localhost:9876?authToken=secret'
 ```
 
 Apply all pending migrations:
 
 ```bash
-litemigrate up --all --directory ./migrations --rqlite-url http://localhost:4001
+litemigrate up --all --directory ./migrations --nsqlite-dsn 'http://localhost:9876?authToken=secret'
 ```
 
 Roll back the most recent migration:
 
 ```bash
-litemigrate down --directory ./migrations --rqlite-url http://localhost:4001
+litemigrate down --directory ./migrations --nsqlite-dsn 'http://localhost:9876?authToken=secret'
 ```
 
 Compile the final schema to stdout:
@@ -200,7 +218,7 @@ litemigrate compile --directory ./migrations --compile-output ./schema.sql
 Show a short migration summary:
 
 ```bash
-litemigrate status --directory ./migrations --rqlite-url http://localhost:4001
+litemigrate status --directory ./migrations --nsqlite-dsn 'http://localhost:9876?authToken=secret'
 ```
 
 Example output:

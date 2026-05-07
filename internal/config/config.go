@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	defaultDriver    = "rqlite"
+	defaultDriver    = "nsqlite"
 	defaultDirectory = "./migrations"
 	defaultTimeout   = 30 * time.Second
 )
