@@ -33,20 +33,20 @@ tasks:
     cmd: go build -o dist/litemigrate cmd/litemigrate/main.go
 
   format:
-    desc: Format code
+    desc: Run formatter
     cmds:
-      - gofumpt -w -extra .
-      - golines -w .
-      - go fmt ./...
       - dprint fmt --config ./dprint.json --log-level warn
+      - golangci-lint fmt ./...
+
+  lint:
+    desc: Run linter
+    cmds:
+      - dprint check --config ./dprint.json --log-level warn
+      - golangci-lint run ./...
 
   test:
     desc: Run tests
     cmd: go test -v ./...
-
-  lint:
-    desc: Run linter
-    cmd: golangci-lint run ./...
 
   # Cross-compilation targets for release builds
 

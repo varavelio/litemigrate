@@ -14,27 +14,32 @@
     "vscode": {
       "extensions": [
         "golang.go",
-        "dprint.dprint",
-        "emeraldwalk.runonsave"
+        "dprint.dprint"
       ],
       "settings": {
         "editor.formatOnSave": true,
         "editor.defaultFormatter": "dprint.dprint",
+
         "[go]": {
-          "editor.defaultFormatter": null,
-          "editor.formatOnSave": false
+          "editor.defaultFormatter": "golang.go"
         },
-        "go.lintTool": "golangci-lint",
-        "go.lintFlags": ["--fast"],
+        "go.useLanguageServer": true,
         "go.testFlags": ["-v"],
-        "emeraldwalk.runonsave": {
-          "commands": [
-            {
-              "match": "\\.go$",
-              "cmd": "gofumpt -w -extra ${file} && golines -w ${file}"
-            }
-          ]
-        }
+
+        // https://golangci-lint.run/docs/welcome/integrations/#visual-studio-code
+        "go.lintTool": "golangci-lint",
+        "go.lintFlags": [
+          "--path-mode=abs",
+          "--fast-only"
+        ],
+        "go.formatTool": "custom",
+        "go.alternateTools": {
+          "customFormatter": "golangci-lint"
+        },
+        "go.formatFlags": [
+          "fmt",
+          "--stdin"
+        ]
       }
     }
   }
