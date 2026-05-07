@@ -176,6 +176,7 @@ Common flags:
   --rqlite-username <value>
   --rqlite-password <value>
   --rqlite-headers <Key=Value,Key=Value>
+  --nsqlite-dsn <dsn>
 `)
 }
 
@@ -238,6 +239,12 @@ func bindCommonFlags(flagSet *flag.FlagSet, flags *config.Flags) commonFlagBinde
 		headersValue,
 		"additional rqlite HTTP headers in Key=Value,Key=Value format",
 	)
+	flagSet.StringVar(
+		&flags.NSQLiteDSN,
+		"nsqlite-dsn",
+		flags.NSQLiteDSN,
+		"nsqlite database/sql DSN",
+	)
 
 	return binder
 }
@@ -299,6 +306,7 @@ func consumesRootValue(argument string) bool {
 		"--rqlite-username",
 		"--rqlite-password",
 		"--rqlite-headers",
+		"--nsqlite-dsn",
 	} {
 		if argument == name || strings.HasPrefix(argument, name+"=") {
 			return true

@@ -29,6 +29,8 @@ type Config struct {
 	Compile CompileConfig
 	// RQLite contains the rqlite-specific runtime settings.
 	RQLite RQLiteConfig
+	// NSQLite contains the nsqlite-specific runtime settings.
+	NSQLite NSQLiteConfig
 }
 
 // CompileConfig contains compile command settings.
@@ -49,6 +51,12 @@ type RQLiteConfig struct {
 	Password string
 	// Headers carries additional HTTP headers sent with every rqlite request.
 	Headers map[string]string
+}
+
+// NSQLiteConfig contains the nsqlite driver settings.
+type NSQLiteConfig struct {
+	// DSN is the nsqlite database/sql connection string.
+	DSN string
 }
 
 // Flags contains flag-derived configuration overrides.
@@ -73,6 +81,8 @@ type Flags struct {
 	RQLitePassword string
 	// RQLiteHeaders overrides rqlite.headers.
 	RQLiteHeaders map[string]string
+	// NSQLiteDSN overrides nsqlite.dsn.
+	NSQLiteDSN string
 }
 
 // Loader resolves configuration from defaults, YAML, environment variables, and flags.
@@ -93,6 +103,7 @@ type rawConfig struct {
 	Directory string           `yaml:"directory"`
 	Compile   rawCompileConfig `yaml:"compile"`
 	RQLite    rawRQLiteConfig  `yaml:"rqlite"`
+	NSQLite   rawNSQLiteConfig `yaml:"nsqlite"`
 }
 
 type rawCompileConfig struct {
@@ -105,6 +116,10 @@ type rawRQLiteConfig struct {
 	Username string            `yaml:"username"`
 	Password string            `yaml:"password"`
 	Headers  map[string]string `yaml:"headers"`
+}
+
+type rawNSQLiteConfig struct {
+	DSN string `yaml:"dsn"`
 }
 
 // NewLoader returns the default configuration loader.
@@ -303,6 +318,9 @@ func (loader Loader) loadEnvConfig(lookupEnv func(string) (string, bool)) rawCon
 			Password: readEnv(lookupEnv, "LITEMIGRATE_RQLITE_PASSWORD"),
 			Headers:  parseHeaderList(readEnv(lookupEnv, "LITEMIGRATE_RQLITE_HEADERS")),
 		},
+		NSQLite: rawNSQLiteConfig{
+			DSN: readEnv(lookupEnv, "LITEMIGRATE_NSQLITE_DSN"),
+		},
 	}
 }
 
@@ -320,6 +338,9 @@ func rawFromFlags(flags Flags) rawConfig {
 			Username: flags.RQLiteUsername,
 			Password: flags.RQLitePassword,
 			Headers:  copyMap(flags.RQLiteHeaders),
+		},
+		NSQLite: rawNSQLiteConfig{
+			DSN: flags.NSQLiteDSN,
 		},
 	}
 }
@@ -364,6 +385,9 @@ func applyRawConfig(config *Config, raw rawConfig, expand func(string) string) e
 			}
 			config.RQLite.Headers[trimmedKey] = strings.TrimSpace(expand(value))
 		}
+	}
+	if val := strings.TrimSpace(raw.NSQLite.DSN); val != "" {
+		config.NSQLite.DSN = strings.TrimSpace(expand(val))
 	}
 
 	return nil

@@ -169,6 +169,60 @@ FLAG_PASS=flag-pass
 		require.Equal(t, "flag-pass", cfg.RQLite.Password)
 	})
 
+	t.Run("applies nsqlite dsn from yaml env and flags", func(t *testing.T) {
+		tempDir := t.TempDir()
+		configPath := filepath.Join(tempDir, "litemigrate.yaml")
+		err := os.WriteFile(configPath, []byte(`
+driver: nsqlite
+nsqlite:
+  dsn: http://file.example:9876?authToken=file
+`), 0o600)
+		require.NoError(t, err)
+
+		t.Setenv("LITEMIGRATE_NSQLITE_DSN", "http://env.example:9876?authToken=env")
+
+		loader := NewLoader()
+		loader.Getwd = func() (string, error) {
+			return tempDir, nil
+		}
+
+		cfg, err := loader.Load(Flags{
+			NSQLiteDSN: "http://flag.example:9876?authToken=flag",
+		})
+
+		require.NoError(t, err)
+		require.Equal(t, "nsqlite", cfg.Driver)
+		require.Equal(t, "http://flag.example:9876?authToken=flag", cfg.NSQLite.DSN)
+	})
+
+	t.Run("resolves nsqlite dsn variables", func(t *testing.T) {
+		tempDir := t.TempDir()
+
+		envPath := filepath.Join(tempDir, ".env")
+		err := os.WriteFile(envPath, []byte(`
+NSQLITE_DSN=http://localhost:9876?authToken=secret
+`), 0o600)
+		require.NoError(t, err)
+
+		configPath := filepath.Join(tempDir, "litemigrate.yaml")
+		err = os.WriteFile(configPath, []byte(`
+driver: nsqlite
+nsqlite:
+  dsn: "env:NSQLITE_DSN"
+`), 0o600)
+		require.NoError(t, err)
+
+		loader := NewLoader()
+		loader.Getwd = func() (string, error) {
+			return tempDir, nil
+		}
+
+		cfg, err := loader.Load(Flags{ConfigPath: configPath, Dotenv: envPath})
+
+		require.NoError(t, err)
+		require.Equal(t, "http://localhost:9876?authToken=secret", cfg.NSQLite.DSN)
+	})
+
 	t.Run("resolves dotenv using yaml configuration", func(t *testing.T) {
 		tempDir := t.TempDir()
 

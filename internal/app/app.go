@@ -13,6 +13,7 @@ import (
 	"github.com/varavelio/litemigrate/internal/compiler"
 	"github.com/varavelio/litemigrate/internal/config"
 	"github.com/varavelio/litemigrate/internal/drivers"
+	"github.com/varavelio/litemigrate/internal/drivers/nsqlite"
 	"github.com/varavelio/litemigrate/internal/drivers/rqlite"
 	"github.com/varavelio/litemigrate/internal/migrations"
 	"github.com/varavelio/litemigrate/internal/store"
@@ -346,8 +347,15 @@ func (app *App) openValidatedDriver(cfg config.Config) (drivers.Driver, error) {
 	if err := validateDriverName(cfg.Driver); err != nil {
 		return nil, err
 	}
-	if strings.TrimSpace(cfg.RQLite.URL) == "" {
-		return nil, fmt.Errorf("rqlite URL must not be empty")
+	switch cfg.Driver {
+	case "", "rqlite":
+		if strings.TrimSpace(cfg.RQLite.URL) == "" {
+			return nil, fmt.Errorf("rqlite URL must not be empty")
+		}
+	case "nsqlite":
+		if strings.TrimSpace(cfg.NSQLite.DSN) == "" {
+			return nil, fmt.Errorf("nsqlite DSN must not be empty")
+		}
 	}
 	return app.OpenDriver(cfg)
 }
@@ -357,17 +365,24 @@ func openDriver(cfg config.Config) (drivers.Driver, error) {
 		return nil, err
 	}
 
-	return rqlite.New(rqlite.Config{
-		URL:      cfg.RQLite.URL,
-		Timeout:  cfg.RQLite.Timeout,
-		Username: cfg.RQLite.Username,
-		Password: cfg.RQLite.Password,
-		Headers:  cfg.RQLite.Headers,
-	})
+	switch cfg.Driver {
+	case "", "rqlite":
+		return rqlite.New(rqlite.Config{
+			URL:      cfg.RQLite.URL,
+			Timeout:  cfg.RQLite.Timeout,
+			Username: cfg.RQLite.Username,
+			Password: cfg.RQLite.Password,
+			Headers:  cfg.RQLite.Headers,
+		})
+	case "nsqlite":
+		return nsqlite.New(nsqlite.Config{DSN: cfg.NSQLite.DSN})
+	default:
+		return nil, fmt.Errorf("unsupported driver %q", cfg.Driver)
+	}
 }
 
 func validateDriverName(name string) error {
-	if name == "" || name == "rqlite" {
+	if name == "" || name == "rqlite" || name == "nsqlite" {
 		return nil
 	}
 	return fmt.Errorf("unsupported driver %q", name)

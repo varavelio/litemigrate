@@ -253,6 +253,36 @@ func TestAppRunStatus(t *testing.T) {
 	})
 }
 
+func TestOpenValidatedDriver(t *testing.T) {
+	t.Run("accepts nsqlite with a dsn", func(t *testing.T) {
+		application := New(&bytes.Buffer{}, &bytes.Buffer{})
+		application.OpenDriver = func(cfg config.Config) (drivers.Driver, error) {
+			require.Equal(t, "nsqlite", cfg.Driver)
+			require.Equal(t, "http://localhost:9876?authToken=secret", cfg.NSQLite.DSN)
+			return newSQLiteTestDriver(t), nil
+		}
+
+		database, err := application.openValidatedDriver(config.Config{
+			Driver: "nsqlite",
+			NSQLite: config.NSQLiteConfig{
+				DSN: "http://localhost:9876?authToken=secret",
+			},
+		})
+
+		require.NoError(t, err)
+		require.NoError(t, database.Close())
+	})
+
+	t.Run("rejects nsqlite without a dsn", func(t *testing.T) {
+		application := New(&bytes.Buffer{}, &bytes.Buffer{})
+
+		_, err := application.openValidatedDriver(config.Config{Driver: "nsqlite"})
+
+		require.Error(t, err)
+		require.ErrorContains(t, err, "nsqlite DSN must not be empty")
+	})
+}
+
 type sqliteTestDriver struct {
 	db *sql.DB
 }
