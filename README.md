@@ -26,7 +26,7 @@
 
 `litemigrate` is a language agnostic schema migration tool built for NSQLite and other SQLite-compatible databases.
 
-The runtime drivers are `nsqlite` and `rqlite`; `nsqlite` is the default.
+`litemigrate` supports `nsqlite` and `rqlite`. The runtime is inferred from the configured settings.
 
 ## Features
 
@@ -106,7 +106,6 @@ Flags and environment variables intentionally mirror the YAML structure:
 
 ```yaml
 dotenv: ./.env
-driver: nsqlite
 directory: ./migrations
 
 compile:
@@ -114,6 +113,7 @@ compile:
 
 nsqlite:
   dsn: "env:NSQLITE_DSN"
+  timeout: 30s
 ```
 
 The NSQLite DSN uses the same format as the NSQLite Go driver:
@@ -121,13 +121,12 @@ The NSQLite DSN uses the same format as the NSQLite Go driver:
 ```yaml
 nsqlite:
   dsn: "http://localhost:9876?authToken=secret"
+  timeout: 30s
 ```
 
-To use rqlite, select the `rqlite` driver and configure its HTTP endpoint:
+To use rqlite, configure its HTTP endpoint:
 
 ```yaml
-driver: rqlite
-
 rqlite:
   url: "http://localhost:4001"
   timeout: 30s
@@ -142,10 +141,10 @@ rqlite:
 ```text
 LITEMIGRATE_DOTENV
 LITEMIGRATE_CONFIG
-LITEMIGRATE_DRIVER
 LITEMIGRATE_DIRECTORY
 LITEMIGRATE_COMPILE_OUTPUT
 LITEMIGRATE_NSQLITE_DSN
+LITEMIGRATE_NSQLITE_TIMEOUT
 LITEMIGRATE_RQLITE_URL
 LITEMIGRATE_RQLITE_TIMEOUT
 LITEMIGRATE_RQLITE_USERNAME
@@ -166,10 +165,10 @@ LITEMIGRATE_RQLITE_HEADERS=Authorization=Bearer token,X-Trace-ID=abc123
 ```text
 --dotenv <path>
 --config <path>
---driver <name>
 --directory <path>
 --compile-output <path>
 --nsqlite-dsn <dsn>
+--nsqlite-timeout <duration>
 --rqlite-url <url>
 --rqlite-timeout <duration>
 --rqlite-username <value>
@@ -189,6 +188,12 @@ Apply the next pending migration:
 
 ```bash
 litemigrate up --directory ./migrations --nsqlite-dsn 'http://localhost:9876?authToken=secret'
+```
+
+Apply the next pending migration with an explicit NSQLite timeout:
+
+```bash
+litemigrate up --directory ./migrations --nsqlite-dsn 'http://localhost:9876?authToken=secret' --nsqlite-timeout 45s
 ```
 
 Apply all pending migrations:
@@ -220,6 +225,8 @@ Show a short migration summary:
 ```bash
 litemigrate status --directory ./migrations --nsqlite-dsn 'http://localhost:9876?authToken=secret'
 ```
+
+If both `nsqlite` and `rqlite` settings are configured at the same time, `litemigrate` fails fast instead of guessing.
 
 Example output:
 

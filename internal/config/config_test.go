@@ -22,14 +22,89 @@ func TestLoaderLoad(t *testing.T) {
 		require.Equal(t, "nsqlite", cfg.Driver)
 		require.Equal(t, "./migrations", cfg.Directory)
 		require.Equal(t, "30s", cfg.RQLite.Timeout.String())
+		require.Equal(t, "30s", cfg.NSQLite.Timeout.String())
 		require.Empty(t, cfg.Compile.Output)
+	})
+
+	t.Run("rejects explicit driver in yaml", func(t *testing.T) {
+		tempDir := t.TempDir()
+		configPath := filepath.Join(tempDir, "litemigrate.yaml")
+		err := os.WriteFile(configPath, []byte("driver: nsqlite\n"), 0o600)
+		require.NoError(t, err)
+
+		loader := NewLoader()
+		loader.Getwd = func() (string, error) {
+			return tempDir, nil
+		}
+
+		_, err = loader.Load(Flags{ConfigPath: configPath})
+
+		require.Error(t, err)
+		require.ErrorContains(t, err, "explicit driver configuration is not supported")
+	})
+
+	t.Run("rejects explicit driver in environment", func(t *testing.T) {
+		t.Setenv("LITEMIGRATE_DRIVER", "nsqlite")
+
+		loader := NewLoader()
+		loader.Getwd = func() (string, error) {
+			return t.TempDir(), nil
+		}
+
+		_, err := loader.Load(Flags{})
+
+		require.Error(t, err)
+		require.ErrorContains(t, err, "explicit driver configuration is not supported")
+	})
+
+	t.Run("infers rqlite driver from configured settings", func(t *testing.T) {
+		tempDir := t.TempDir()
+		configPath := filepath.Join(tempDir, "litemigrate.yaml")
+		err := os.WriteFile(configPath, []byte(`
+rqlite:
+  url: http://file.example:4001
+`), 0o600)
+		require.NoError(t, err)
+
+		loader := NewLoader()
+		loader.Getwd = func() (string, error) {
+			return tempDir, nil
+		}
+
+		cfg, err := loader.Load(Flags{ConfigPath: configPath})
+
+		require.NoError(t, err)
+		require.Equal(t, "rqlite", cfg.Driver)
+		require.Equal(t, "http://file.example:4001", cfg.RQLite.URL)
+	})
+
+	t.Run("infers nsqlite driver from configured settings", func(t *testing.T) {
+		tempDir := t.TempDir()
+		configPath := filepath.Join(tempDir, "litemigrate.yaml")
+		err := os.WriteFile(configPath, []byte(`
+nsqlite:
+  dsn: http://file.example:9876?authToken=file
+  timeout: 45s
+`), 0o600)
+		require.NoError(t, err)
+
+		loader := NewLoader()
+		loader.Getwd = func() (string, error) {
+			return tempDir, nil
+		}
+
+		cfg, err := loader.Load(Flags{ConfigPath: configPath})
+
+		require.NoError(t, err)
+		require.Equal(t, "nsqlite", cfg.Driver)
+		require.Equal(t, "http://file.example:9876?authToken=file", cfg.NSQLite.DSN)
+		require.Equal(t, "45s", cfg.NSQLite.Timeout.String())
 	})
 
 	t.Run("applies yaml env and flag precedence", func(t *testing.T) {
 		tempDir := t.TempDir()
 		configPath := filepath.Join(tempDir, "litemigrate.yaml")
 		err := os.WriteFile(configPath, []byte(`
-driver: rqlite
 directory: file-migrations
 compile:
   output: file.sql
@@ -173,7 +248,6 @@ FLAG_PASS=flag-pass
 		tempDir := t.TempDir()
 		configPath := filepath.Join(tempDir, "litemigrate.yaml")
 		err := os.WriteFile(configPath, []byte(`
-driver: nsqlite
 nsqlite:
   dsn: http://file.example:9876?authToken=file
 `), 0o600)
@@ -187,12 +261,14 @@ nsqlite:
 		}
 
 		cfg, err := loader.Load(Flags{
-			NSQLiteDSN: "http://flag.example:9876?authToken=flag",
+			NSQLiteDSN:     "http://flag.example:9876?authToken=flag",
+			NSQLiteTimeout: "45s",
 		})
 
 		require.NoError(t, err)
 		require.Equal(t, "nsqlite", cfg.Driver)
 		require.Equal(t, "http://flag.example:9876?authToken=flag", cfg.NSQLite.DSN)
+		require.Equal(t, "45s", cfg.NSQLite.Timeout.String())
 	})
 
 	t.Run("resolves nsqlite dsn variables", func(t *testing.T) {
@@ -206,7 +282,6 @@ NSQLITE_DSN=http://localhost:9876?authToken=secret
 
 		configPath := filepath.Join(tempDir, "litemigrate.yaml")
 		err = os.WriteFile(configPath, []byte(`
-driver: nsqlite
 nsqlite:
   dsn: "env:NSQLITE_DSN"
 `), 0o600)
@@ -221,6 +296,28 @@ nsqlite:
 
 		require.NoError(t, err)
 		require.Equal(t, "http://localhost:9876?authToken=secret", cfg.NSQLite.DSN)
+	})
+
+	t.Run("rejects mixed rqlite and nsqlite settings", func(t *testing.T) {
+		tempDir := t.TempDir()
+		configPath := filepath.Join(tempDir, "litemigrate.yaml")
+		err := os.WriteFile(configPath, []byte(`
+rqlite:
+  url: http://file.example:4001
+nsqlite:
+  dsn: http://file.example:9876?authToken=file
+`), 0o600)
+		require.NoError(t, err)
+
+		loader := NewLoader()
+		loader.Getwd = func() (string, error) {
+			return tempDir, nil
+		}
+
+		_, err = loader.Load(Flags{ConfigPath: configPath})
+
+		require.Error(t, err)
+		require.ErrorContains(t, err, "rqlite and nsqlite settings cannot be used together")
 	})
 
 	t.Run("resolves dotenv using yaml configuration", func(t *testing.T) {

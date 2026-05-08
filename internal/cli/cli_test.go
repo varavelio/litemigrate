@@ -10,23 +10,23 @@ func TestParse(t *testing.T) {
 	t.Run("parses common flags before and after the command", func(t *testing.T) {
 		parsed, err := Parse([]string{
 			"--directory", "root-migrations",
-			"--driver", "nsqlite",
 			"up",
 			"--all",
 			"--rqlite-url", "http://localhost:4001",
 			"--rqlite-timeout", "45s",
 			"--rqlite-headers", "X-Test=one,X-Trace=two",
 			"--nsqlite-dsn", "http://localhost:9876?authToken=secret",
+			"--nsqlite-timeout", "30s",
 		})
 
 		require.NoError(t, err)
 		require.Equal(t, CommandUp, parsed.Name)
 		require.True(t, parsed.All)
-		require.Equal(t, "nsqlite", parsed.Flags.Driver)
 		require.Equal(t, "root-migrations", parsed.Flags.Directory)
 		require.Equal(t, "http://localhost:4001", parsed.Flags.RQLiteURL)
 		require.Equal(t, "45s", parsed.Flags.RQLiteTimeout)
 		require.Equal(t, "http://localhost:9876?authToken=secret", parsed.Flags.NSQLiteDSN)
+		require.Equal(t, "30s", parsed.Flags.NSQLiteTimeout)
 		require.Equal(
 			t,
 			map[string]string{"X-Test": "one", "X-Trace": "two"},
@@ -58,5 +58,12 @@ func TestParse(t *testing.T) {
 		_, err := Parse([]string{"unknown"})
 
 		require.Error(t, err)
+	})
+
+	t.Run("rejects removed driver flag", func(t *testing.T) {
+		_, err := Parse([]string{"up", "--driver", "nsqlite"})
+
+		require.Error(t, err)
+		require.ErrorContains(t, err, "flag provided but not defined: -driver")
 	})
 }

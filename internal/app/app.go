@@ -233,9 +233,11 @@ func (app *App) runDown(ctx context.Context, cfg config.Config, all bool) error 
 }
 
 func (app *App) runCompile(cfg config.Config) error {
-	if err := validateDriverName(cfg.Driver); err != nil {
+	driverName, err := cfg.ResolveDriver()
+	if err != nil {
 		return err
 	}
+	cfg.Driver = driverName
 
 	files, err := migrations.LoadDir(cfg.Directory)
 	if err != nil {
@@ -344,15 +346,18 @@ func (app *App) runHelp() error {
 }
 
 func (app *App) openValidatedDriver(cfg config.Config) (drivers.Driver, error) {
-	if err := validateDriverName(cfg.Driver); err != nil {
+	driverName, err := cfg.ResolveDriver()
+	if err != nil {
 		return nil, err
 	}
-	switch cfg.Driver {
+	cfg.Driver = driverName
+
+	switch driverName {
 	case "rqlite":
 		if strings.TrimSpace(cfg.RQLite.URL) == "" {
 			return nil, fmt.Errorf("rqlite URL must not be empty")
 		}
-	case "", "nsqlite":
+	case "nsqlite":
 		if strings.TrimSpace(cfg.NSQLite.DSN) == "" {
 			return nil, fmt.Errorf("nsqlite DSN must not be empty")
 		}
@@ -361,11 +366,13 @@ func (app *App) openValidatedDriver(cfg config.Config) (drivers.Driver, error) {
 }
 
 func openDriver(cfg config.Config) (drivers.Driver, error) {
-	if err := validateDriverName(cfg.Driver); err != nil {
+	driverName, err := cfg.ResolveDriver()
+	if err != nil {
 		return nil, err
 	}
+	cfg.Driver = driverName
 
-	switch cfg.Driver {
+	switch driverName {
 	case "rqlite":
 		return rqlite.New(rqlite.Config{
 			URL:      cfg.RQLite.URL,
@@ -374,18 +381,14 @@ func openDriver(cfg config.Config) (drivers.Driver, error) {
 			Password: cfg.RQLite.Password,
 			Headers:  cfg.RQLite.Headers,
 		})
-	case "", "nsqlite":
-		return nsqlite.New(nsqlite.Config{DSN: cfg.NSQLite.DSN})
+	case "nsqlite":
+		return nsqlite.New(nsqlite.Config{
+			DSN:     cfg.NSQLite.DSN,
+			Timeout: cfg.NSQLite.Timeout,
+		})
 	default:
-		return nil, fmt.Errorf("unsupported driver %q", cfg.Driver)
+		return nil, fmt.Errorf("unsupported driver %q", driverName)
 	}
-}
-
-func validateDriverName(name string) error {
-	if name == "" || name == "nsqlite" || name == "rqlite" {
-		return nil
-	}
-	return fmt.Errorf("unsupported driver %q", name)
 }
 
 func reverseRecords(records []store.Record) []store.Record {

@@ -260,13 +260,14 @@ func TestOpenValidatedDriver(t *testing.T) {
 		application.OpenDriver = func(cfg config.Config) (drivers.Driver, error) {
 			require.Equal(t, "nsqlite", cfg.Driver)
 			require.Equal(t, "http://localhost:9876?authToken=secret", cfg.NSQLite.DSN)
+			require.Equal(t, 45*time.Second, cfg.NSQLite.Timeout)
 			return newSQLiteTestDriver(t), nil
 		}
 
 		database, err := application.openValidatedDriver(config.Config{
-			Driver: "nsqlite",
 			NSQLite: config.NSQLiteConfig{
-				DSN: "http://localhost:9876?authToken=secret",
+				DSN:     "http://localhost:9876?authToken=secret",
+				Timeout: 45 * time.Second,
 			},
 		})
 
@@ -274,10 +275,26 @@ func TestOpenValidatedDriver(t *testing.T) {
 		require.NoError(t, database.Close())
 	})
 
+	t.Run("rejects mixed rqlite and nsqlite settings", func(t *testing.T) {
+		application := New(&bytes.Buffer{}, &bytes.Buffer{})
+
+		_, err := application.openValidatedDriver(config.Config{
+			RQLite: config.RQLiteConfig{
+				URL: "http://localhost:4001",
+			},
+			NSQLite: config.NSQLiteConfig{
+				DSN: "http://localhost:9876?authToken=secret",
+			},
+		})
+
+		require.Error(t, err)
+		require.ErrorContains(t, err, "rqlite and nsqlite settings cannot be used together")
+	})
+
 	t.Run("rejects nsqlite without a dsn", func(t *testing.T) {
 		application := New(&bytes.Buffer{}, &bytes.Buffer{})
 
-		_, err := application.openValidatedDriver(config.Config{Driver: "nsqlite"})
+		_, err := application.openValidatedDriver(config.Config{})
 
 		require.Error(t, err)
 		require.ErrorContains(t, err, "nsqlite DSN must not be empty")
@@ -292,7 +309,6 @@ func TestOpenValidatedDriver(t *testing.T) {
 		}
 
 		database, err := application.openValidatedDriver(config.Config{
-			Driver: "rqlite",
 			RQLite: config.RQLiteConfig{
 				URL: "http://localhost:4001",
 			},

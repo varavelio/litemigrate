@@ -31,6 +31,9 @@ type Config struct {
 	RQLite RQLiteConfig
 	// NSQLite contains the nsqlite-specific runtime settings.
 	NSQLite NSQLiteConfig
+
+	rqliteConfigured  bool
+	nsqliteConfigured bool
 }
 
 // CompileConfig contains compile command settings.
@@ -57,6 +60,8 @@ type RQLiteConfig struct {
 type NSQLiteConfig struct {
 	// DSN is the nsqlite database/sql connection string.
 	DSN string
+	// Timeout bounds each nsqlite database operation.
+	Timeout time.Duration
 }
 
 // Flags contains flag-derived configuration overrides.
@@ -65,8 +70,6 @@ type Flags struct {
 	Dotenv string
 	// ConfigPath points to an explicit configuration file.
 	ConfigPath string
-	// Driver overrides the configured runtime backend.
-	Driver string
 	// Directory overrides the configured migration directory.
 	Directory string
 	// CompileOutput overrides compile.output.
@@ -83,6 +86,8 @@ type Flags struct {
 	RQLiteHeaders map[string]string
 	// NSQLiteDSN overrides nsqlite.dsn.
 	NSQLiteDSN string
+	// NSQLiteTimeout overrides nsqlite.timeout.
+	NSQLiteTimeout string
 }
 
 // Loader resolves configuration from defaults, YAML, environment variables, and flags.
@@ -119,7 +124,8 @@ type rawRQLiteConfig struct {
 }
 
 type rawNSQLiteConfig struct {
-	DSN string `yaml:"dsn"`
+	DSN     string `yaml:"dsn"`
+	Timeout string `yaml:"timeout"`
 }
 
 // NewLoader returns the default configuration loader.
@@ -135,7 +141,6 @@ func NewLoader() Loader {
 // Load resolves configuration using flags, environment variables, YAML, and defaults.
 func (loader Loader) Load(flags Flags) (Config, error) {
 	config := Config{
-		Driver:    defaultDriver,
 		Directory: defaultDirectory,
 		Compile: CompileConfig{
 			Output: "",
@@ -143,6 +148,9 @@ func (loader Loader) Load(flags Flags) (Config, error) {
 		RQLite: RQLiteConfig{
 			Timeout: defaultTimeout,
 			Headers: map[string]string{},
+		},
+		NSQLite: NSQLiteConfig{
+			Timeout: defaultTimeout,
 		},
 	}
 
@@ -208,14 +216,59 @@ func (loader Loader) Load(flags Flags) (Config, error) {
 		}
 	}
 
-	if err := applyRawConfig(&config, loader.loadEnvConfig(lookupEnv), expand); err != nil {
+	envConfig := loader.loadEnvConfig(lookupEnv)
+	if err := applyRawConfig(&config, envConfig, expand); err != nil {
 		return Config{}, fmt.Errorf("apply environment configuration: %w", err)
 	}
-	if err := applyRawConfig(&config, rawFromFlags(flags), expand); err != nil {
+	flagConfig := rawFromFlags(flags)
+	if err := applyRawConfig(&config, flagConfig, expand); err != nil {
 		return Config{}, fmt.Errorf("apply flag configuration: %w", err)
 	}
 
+	driverName, _, rqliteConfigured, nsqliteConfigured, err := resolveDriverConfiguration(
+		fileConfig,
+		envConfig,
+		flagConfig,
+		expand,
+	)
+	if err != nil {
+		return Config{}, err
+	}
+
+	config.Driver = driverName
+	config.rqliteConfigured = rqliteConfigured
+	config.nsqliteConfigured = nsqliteConfigured
+
 	return config, nil
+}
+
+// ResolveDriver returns the inferred runtime driver name.
+func (config Config) ResolveDriver() (string, error) {
+	if err := validateResolvedDriverName(config.Driver); err != nil {
+		return "", err
+	}
+	if config.rqliteConfigured || config.nsqliteConfigured || config.Driver != "" {
+		if config.rqliteConfigured && config.nsqliteConfigured {
+			return "", fmt.Errorf("rqlite and nsqlite settings cannot be used together")
+		}
+		if config.Driver != "" {
+			return config.Driver, nil
+		}
+	}
+
+	rqliteConfigured := hasConfiguredRQLiteSettings(config.RQLite)
+	nsqliteConfigured := hasConfiguredNSQLiteSettings(config.NSQLite)
+	if rqliteConfigured && nsqliteConfigured {
+		return "", fmt.Errorf("rqlite and nsqlite settings cannot be used together")
+	}
+	if rqliteConfigured {
+		return "rqlite", nil
+	}
+	if nsqliteConfigured {
+		return "nsqlite", nil
+	}
+
+	return defaultDriver, nil
 }
 
 func (loader Loader) resolveDotenvPath(flags Flags, fileConfig rawConfig) (string, bool, error) {
@@ -319,7 +372,8 @@ func (loader Loader) loadEnvConfig(lookupEnv func(string) (string, bool)) rawCon
 			Headers:  parseHeaderList(readEnv(lookupEnv, "LITEMIGRATE_RQLITE_HEADERS")),
 		},
 		NSQLite: rawNSQLiteConfig{
-			DSN: readEnv(lookupEnv, "LITEMIGRATE_NSQLITE_DSN"),
+			DSN:     readEnv(lookupEnv, "LITEMIGRATE_NSQLITE_DSN"),
+			Timeout: readEnv(lookupEnv, "LITEMIGRATE_NSQLITE_TIMEOUT"),
 		},
 	}
 }
@@ -327,7 +381,6 @@ func (loader Loader) loadEnvConfig(lookupEnv func(string) (string, bool)) rawCon
 func rawFromFlags(flags Flags) rawConfig {
 	return rawConfig{
 		Dotenv:    flags.Dotenv,
-		Driver:    flags.Driver,
 		Directory: flags.Directory,
 		Compile: rawCompileConfig{
 			Output: flags.CompileOutput,
@@ -340,15 +393,13 @@ func rawFromFlags(flags Flags) rawConfig {
 			Headers:  copyMap(flags.RQLiteHeaders),
 		},
 		NSQLite: rawNSQLiteConfig{
-			DSN: flags.NSQLiteDSN,
+			DSN:     flags.NSQLiteDSN,
+			Timeout: flags.NSQLiteTimeout,
 		},
 	}
 }
 
 func applyRawConfig(config *Config, raw rawConfig, expand func(string) string) error {
-	if val := strings.TrimSpace(raw.Driver); val != "" {
-		config.Driver = strings.TrimSpace(expand(val))
-	}
 	if val := strings.TrimSpace(raw.Directory); val != "" {
 		config.Directory = strings.TrimSpace(expand(val))
 	}
@@ -359,12 +410,11 @@ func applyRawConfig(config *Config, raw rawConfig, expand func(string) string) e
 		config.RQLite.URL = strings.TrimSpace(expand(val))
 	}
 	if val := strings.TrimSpace(raw.RQLite.Timeout); val != "" {
-		expandedTimeout := strings.TrimSpace(expand(val))
-		if expandedTimeout != "" {
-			parsed, err := time.ParseDuration(expandedTimeout)
-			if err != nil {
-				return fmt.Errorf("parse rqlite timeout %q: %w", expandedTimeout, err)
-			}
+		parsed, err := parseDurationSetting(expand, val, "rqlite timeout")
+		if err != nil {
+			return err
+		}
+		if parsed != 0 {
 			config.RQLite.Timeout = parsed
 		}
 	}
@@ -389,8 +439,118 @@ func applyRawConfig(config *Config, raw rawConfig, expand func(string) string) e
 	if val := strings.TrimSpace(raw.NSQLite.DSN); val != "" {
 		config.NSQLite.DSN = strings.TrimSpace(expand(val))
 	}
+	if val := strings.TrimSpace(raw.NSQLite.Timeout); val != "" {
+		parsed, err := parseDurationSetting(expand, val, "nsqlite timeout")
+		if err != nil {
+			return err
+		}
+		config.NSQLite.Timeout = parsed
+	}
 
 	return nil
+}
+
+func resolveDriverConfiguration(
+	fileConfig rawConfig,
+	envConfig rawConfig,
+	flagConfig rawConfig,
+	expand func(string) string,
+) (string, bool, bool, bool, error) {
+	explicitDriver := ""
+	rqliteConfigured := false
+	nsqliteConfigured := false
+	for _, raw := range []rawConfig{fileConfig, envConfig, flagConfig} {
+		if val := strings.TrimSpace(expand(raw.Driver)); val != "" {
+			explicitDriver = val
+		}
+		rqliteConfigured = rqliteConfigured || rawHasRQLiteSettings(raw, expand)
+		nsqliteConfigured = nsqliteConfigured || rawHasNSQLiteSettings(raw, expand)
+	}
+
+	if explicitDriver != "" {
+		if err := validateResolvedDriverName(explicitDriver); err != nil {
+			return "", false, false, false, err
+		}
+		return "", false, false, false, fmt.Errorf("explicit driver configuration is not supported")
+	}
+	if rqliteConfigured && nsqliteConfigured {
+		return "", false, false, false, fmt.Errorf("rqlite and nsqlite settings cannot be used together")
+	}
+	if rqliteConfigured {
+		return "rqlite", false, true, false, nil
+	}
+	if nsqliteConfigured {
+		return "nsqlite", false, false, true, nil
+	}
+
+	return defaultDriver, false, false, false, nil
+}
+
+func validateResolvedDriverName(name string) error {
+	if name == "" || name == "nsqlite" || name == "rqlite" {
+		return nil
+	}
+	return fmt.Errorf("unsupported driver %q", name)
+}
+
+func rawHasRQLiteSettings(raw rawConfig, expand func(string) string) bool {
+	if strings.TrimSpace(expand(raw.RQLite.URL)) != "" {
+		return true
+	}
+	if strings.TrimSpace(expand(raw.RQLite.Timeout)) != "" {
+		return true
+	}
+	if strings.TrimSpace(expand(raw.RQLite.Username)) != "" {
+		return true
+	}
+	if strings.TrimSpace(expand(raw.RQLite.Password)) != "" {
+		return true
+	}
+	return len(raw.RQLite.Headers) > 0
+}
+
+func rawHasNSQLiteSettings(raw rawConfig, expand func(string) string) bool {
+	if strings.TrimSpace(expand(raw.NSQLite.DSN)) != "" {
+		return true
+	}
+	return strings.TrimSpace(expand(raw.NSQLite.Timeout)) != ""
+}
+
+func hasConfiguredRQLiteSettings(config RQLiteConfig) bool {
+	if strings.TrimSpace(config.URL) != "" {
+		return true
+	}
+	if config.Timeout != 0 {
+		return true
+	}
+	if strings.TrimSpace(config.Username) != "" {
+		return true
+	}
+	if strings.TrimSpace(config.Password) != "" {
+		return true
+	}
+	return len(config.Headers) > 0
+}
+
+func hasConfiguredNSQLiteSettings(config NSQLiteConfig) bool {
+	if strings.TrimSpace(config.DSN) != "" {
+		return true
+	}
+	return config.Timeout != 0
+}
+
+func parseDurationSetting(expand func(string) string, value string, label string) (time.Duration, error) {
+	expanded := strings.TrimSpace(expand(value))
+	if expanded == "" {
+		return 0, nil
+	}
+
+	parsed, err := time.ParseDuration(expanded)
+	if err != nil {
+		return 0, fmt.Errorf("parse %s %q: %w", label, expanded, err)
+	}
+
+	return parsed, nil
 }
 
 func parseHeaderList(value string) map[string]string {

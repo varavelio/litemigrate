@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+	"time"
 
 	_ "github.com/varavelio/nsqlitego"
 )
@@ -13,12 +14,17 @@ import (
 type Config struct {
 	// DSN is the nsqlite database/sql connection string.
 	DSN string
+	// Timeout bounds each database operation.
+	Timeout time.Duration
 }
 
 // Driver executes migration operations against NSQLite through database/sql.
 type Driver struct {
-	db *sql.DB
+	db      *sql.DB
+	timeout time.Duration
 }
+
+const defaultTimeout = 30 * time.Second
 
 // New creates a new nsqlite database/sql driver.
 func New(config Config) (*Driver, error) {
@@ -32,7 +38,12 @@ func New(config Config) (*Driver, error) {
 		return nil, fmt.Errorf("open nsqlite database: %w", err)
 	}
 
-	return &Driver{db: database}, nil
+	timeout := config.Timeout
+	if timeout == 0 {
+		timeout = defaultTimeout
+	}
+
+	return &Driver{db: database, timeout: timeout}, nil
 }
 
 // Exec executes write statements against NSQLite.
@@ -40,6 +51,9 @@ func (driver *Driver) Exec(ctx context.Context, statements []string, transaction
 	if len(statements) == 0 {
 		return nil
 	}
+
+	ctx, cancel := driver.withTimeout(ctx)
+	defer cancel()
 
 	if transactional {
 		transaction, err := driver.db.BeginTx(ctx, nil)
@@ -71,6 +85,9 @@ func (driver *Driver) Exec(ctx context.Context, statements []string, transaction
 
 // Query executes a read statement and returns associative rows.
 func (driver *Driver) Query(ctx context.Context, statement string) ([]map[string]any, error) {
+	ctx, cancel := driver.withTimeout(ctx)
+	defer cancel()
+
 	rows, err := driver.db.QueryContext(ctx, statement)
 	if err != nil {
 		return nil, fmt.Errorf("query nsqlite statement: %w", err)
@@ -119,4 +136,11 @@ func normalizeValue(value any) any {
 		return string(bytes)
 	}
 	return value
+}
+
+func (driver *Driver) withTimeout(ctx context.Context) (context.Context, context.CancelFunc) {
+	if driver.timeout <= 0 {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(ctx, driver.timeout)
 }

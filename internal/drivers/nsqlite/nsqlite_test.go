@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	_ "modernc.org/sqlite"
@@ -15,6 +16,14 @@ func TestNew(t *testing.T) {
 
 		require.Error(t, err)
 		require.ErrorContains(t, err, "nsqlite DSN must not be empty")
+	})
+
+	t.Run("accepts a configured timeout", func(t *testing.T) {
+		driver, err := New(Config{DSN: "http://example.invalid", Timeout: 5 * time.Second})
+
+		require.NoError(t, err)
+		require.Equal(t, 5*time.Second, driver.timeout)
+		require.NoError(t, driver.Close())
 	})
 }
 

@@ -168,10 +168,10 @@ Usage:
 Common flags:
   --dotenv <path>
   --config <path>
-  --driver <name>
   --directory <path>
   --compile-output <path>
   --nsqlite-dsn <dsn>
+  --nsqlite-timeout <duration>
   --rqlite-url <url>
   --rqlite-timeout <duration>
   --rqlite-username <value>
@@ -206,7 +206,6 @@ func bindCommonFlags(flagSet *flag.FlagSet, flags *config.Flags) commonFlagBinde
 		flags.ConfigPath,
 		"path to the configuration file",
 	)
-	flagSet.StringVar(&flags.Driver, "driver", flags.Driver, "database driver")
 	flagSet.StringVar(&flags.Directory, "directory", flags.Directory, "migration directory")
 	flagSet.StringVar(
 		&flags.CompileOutput,
@@ -244,6 +243,12 @@ func bindCommonFlags(flagSet *flag.FlagSet, flags *config.Flags) commonFlagBinde
 		"nsqlite-dsn",
 		flags.NSQLiteDSN,
 		"nsqlite database/sql DSN",
+	)
+	flagSet.StringVar(
+		&flags.NSQLiteTimeout,
+		"nsqlite-timeout",
+		flags.NSQLiteTimeout,
+		"nsqlite operation timeout",
 	)
 
 	return binder
@@ -298,7 +303,6 @@ func consumesRootValue(argument string) bool {
 	for _, name := range []string{
 		"--dotenv",
 		"--config",
-		"--driver",
 		"--directory",
 		"--compile-output",
 		"--rqlite-url",
@@ -307,6 +311,7 @@ func consumesRootValue(argument string) bool {
 		"--rqlite-password",
 		"--rqlite-headers",
 		"--nsqlite-dsn",
+		"--nsqlite-timeout",
 	} {
 		if argument == name || strings.HasPrefix(argument, name+"=") {
 			return true
