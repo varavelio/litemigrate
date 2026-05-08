@@ -5,7 +5,7 @@ go 1.26
 require (
 	github.com/joho/godotenv v1.5.1
 	github.com/stretchr/testify v1.10.0
-	github.com/varavelio/nsqlitego v0.2.0
+	github.com/varavelio/nsqlitego v0.3.0
 	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/libc v1.66.10
 	modernc.org/sqlite v1.39.1
